@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/cashier';
+
+package pb.cashier;
+
+import "google/protobuf/empty.proto";
+import "cashier/cashier.proto";
+
+message ApiResponseCashierAll {
+  string status = 1;
+  string message = 2;
+}
+
+message ApiResponseCashierDelete {
+  string status = 1;
+  string message = 2;
+}
+
+service CashierCommandService {
+  rpc CreateCashier(CreateCashierRequest) returns (ApiResponseCashier) {}
+  rpc UpdateCashier(UpdateCashierRequest) returns (ApiResponseCashier) {}
+  rpc TrashedCashier(FindByIdCashierRequest) returns (ApiResponseCashierDeleteAt) {}
+  rpc RestoreCashier(FindByIdCashierRequest) returns (ApiResponseCashierDeleteAt) {}
+  rpc DeleteCashierPermanent(FindByIdCashierRequest) returns (ApiResponseCashierDelete) {}
+  rpc RestoreAllCashier(google.protobuf.Empty) returns (ApiResponseCashierAll) {}
+  rpc DeleteAllCashierPermanent(google.protobuf.Empty) returns (ApiResponseCashierAll) {}
+}

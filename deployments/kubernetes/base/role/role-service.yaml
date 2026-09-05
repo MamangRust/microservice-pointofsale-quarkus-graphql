@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: role
+  namespace: pointofsale
+spec:
+  selector:
+    app: role
+  ports:
+    - name: grpc
+      port: 9006
+      targetPort: 9006
+  type: ClusterIP

@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/product';
+
+package pb.product;
+
+import "common/api.proto";
+import "product/product.proto";
+
+message ApiResponsePaginationProduct {
+    string status = 1;
+    string message = 2;
+    repeated ProductResponse data = 3;
+    pb.common.PaginationMeta pagination = 4;
+}
+
+message ApiResponsePaginationProductDeleteAt {
+    string status = 1;
+    string message = 2;
+    repeated ProductResponseDeleteAt data = 3;
+    pb.common.PaginationMeta pagination = 4;
+}
+
+service ProductService {
+    rpc FindAll(FindAllProductRequest) returns (ApiResponsePaginationProduct);
+    rpc FindByMerchant(FindAllProductMerchantRequest) returns (ApiResponsePaginationProduct);
+    rpc FindByCategory(FindAllProductCategoryRequest) returns (ApiResponsePaginationProduct);
+
+    rpc FindById(FindByIdProductRequest) returns (ApiResponseProduct);
+
+    rpc FindByActive(FindAllProductRequest) returns (ApiResponsePaginationProductDeleteAt);
+    rpc FindByTrashed(FindAllProductRequest) returns (ApiResponsePaginationProductDeleteAt);
+}

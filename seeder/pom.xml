@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.sanedge</groupId>
+        <artifactId>quarkus-modular-monolith</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>seeder</artifactId>
+    <packaging>jar</packaging>
+    <name>Seeder Orchestrator</name>
+
+    <dependencies>
+        <!-- Common module (provides Seeder SPI + SeedContext + PasswordUtil) -->
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+
+        <!-- Domain modules (each provides XxxSeeder + META-INF/services) -->
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>user</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>merchant</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>cashier</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>category</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>product</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>order</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.sanedge</groupId>
+            <artifactId>transaction</artifactId>
+        </dependency>
+
+        <!-- CDI container -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+
+        <!-- Vert.x Mutiny (for Uni + reactive PG pool) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-reactive-pg-client</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

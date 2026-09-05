@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/order/stats';
+
+package pb.order.stats;
+
+import "order/order.proto";
+
+service OrderSoldoutService {
+  rpc FindMonthlyRevenue(FindYearOrder) returns (ApiResponseOrderMonthly) {}
+  rpc FindYearlyRevenue(FindYearOrder) returns (ApiResponseOrderYearly) {}
+
+  rpc FindMonthlyRevenueByMerchant(FindYearOrderByMerchant) returns (ApiResponseOrderMonthly) {}
+  rpc FindYearlyRevenueByMerchant(FindYearOrderByMerchant) returns (ApiResponseOrderYearly) {}
+}

@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/category';
+
+package pb.category;
+
+import "common/api.proto";
+import "category/category.proto";
+
+message ApiResponsePaginationCategoryDeleteAt {
+  string status = 1;
+  string message = 2;
+  repeated CategoryResponseDeleteAt data = 3;
+  pb.common.PaginationMeta pagination = 4;
+}
+
+message ApiResponsePaginationCategory {
+  string status = 1;
+  string message = 2;
+  repeated CategoryResponse data = 3;
+  pb.common.PaginationMeta pagination = 4;
+}
+
+service CategoryQueryService {
+  rpc FindByActive(FindAllCategoryRequest) returns (ApiResponsePaginationCategoryDeleteAt) {}
+  rpc FindByTrashed(FindAllCategoryRequest) returns (ApiResponsePaginationCategoryDeleteAt) {}
+
+  rpc FindAll(FindAllCategoryRequest) returns (ApiResponsePaginationCategory) {}
+  rpc FindById(FindByIdCategoryRequest) returns (ApiResponseCategory) {}
+}

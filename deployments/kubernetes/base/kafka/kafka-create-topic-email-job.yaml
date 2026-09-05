@@ -1,0 +1,85 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-create-email-topics
+  namespace: pointofsale
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topic-init
+          image: bitnami/kafka:3.7.0
+          env:
+            - name: KAFKA_CLIENT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CLIENT_USER
+            - name: KAFKA_CLIENT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CLIENT_PASSWORD
+            - name: KAFKA_CERTIFICATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CERTIFICATE_PASSWORD
+          volumeMounts:
+            - name: kafka-tls
+              mountPath: /certs
+              readOnly: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Broker listener is SASL_SSL (SCRAM-SHA-256) with a JKS truststore
+              # from the kafka-tls secret (see kafka-deployment.yaml, Fase 14 K-6).
+              cat > /tmp/client.properties <<'PROPS'
+              security.protocol=SASL_SSL
+              sasl.mechanism=SCRAM-SHA-256
+              sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_CLIENT_USER}" password="${KAFKA_CLIENT_PASSWORD}";
+              ssl.truststore.location=/certs/kafka.truststore.jks
+              ssl.truststore.type=JKS
+              ssl.truststore.password=${KAFKA_CERTIFICATE_PASSWORD}
+              PROPS
+              echo "Creating Kafka email topics + shared retry/DLQ (Phase 6)..."
+              # 3 partitions per topic to match KAFKA_CFG_NUM_PARTITIONS so the
+              # email consumer can scale (>1 replica / HPA).
+              for topic in \
+                email-service-topic-auth-register \
+                email-service-topic-auth-forgot-password \
+                email-service-topic-auth-verify-code-success \
+                email-service-topic-transaction-create \
+                email-service-topic-merchant-create \
+                email-service-topic-merchant-update-status \
+                email-service-topic-merchant-document-create \
+                email-service-topic-merchant-document-update-status; do
+                kafka-topics.sh \
+                  --bootstrap-server kafka.pointofsale.svc.cluster.local:9092 \
+                  --command-config /tmp/client.properties \
+                  --create \
+                  --if-not-exists \
+                  --replication-factor 1 \
+                  --partitions 3 \
+                  --topic "$topic"
+              done
+              for topic in \
+                email-service-topic-email-retry \
+                email-service-topic-email-dlq; do
+                kafka-topics.sh \
+                  --bootstrap-server kafka.pointofsale.svc.cluster.local:9092 \
+                  --command-config /tmp/client.properties \
+                  --create \
+                  --if-not-exists \
+                  --replication-factor 1 \
+                  --partitions 3 \
+                  --topic "$topic"
+              done
+              echo "Email topics + shared retry/DLQ created (or already exist)."
+      volumes:
+        - name: kafka-tls
+          secret:
+            secretName: kafka-tls
+            optional: true

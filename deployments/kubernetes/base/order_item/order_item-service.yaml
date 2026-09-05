@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-item
+  namespace: pointofsale
+spec:
+  selector:
+    app: order-item
+  ports:
+    - name: grpc
+      port: 9016
+      targetPort: 9016
+  type: ClusterIP

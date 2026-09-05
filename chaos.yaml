@@ -1,0 +1,698 @@
+warmupDuration: "10s"
+enableDefaultIgnored: true
+policies:
+  # ═══════════════════════════════════════════════
+  # HTTP — REST API (gateway module, /api/*)
+  # ═══════════════════════════════════════════════
+
+  # ── Auth ──────────────────────────────────────
+  - name: "http-auth-login-rate-limit"
+    type: "http"
+    target: "POST:/api/auth/login"
+    enabled: false
+    errorChance: 0.4
+    errorCode: 429
+    errorBody: '{"error":"too_many_requests","message":"Rate limit exceeded by chaos simulation"}'
+    latencyMs: 1000
+
+  - name: "http-auth-login-delay"
+    type: "http"
+    target: "POST:/api/auth/login"
+    enabled: false
+    errorChance: 0.15
+    latencyMs: 2000
+
+  - name: "http-auth-register-error"
+    type: "http"
+    target: "POST:/api/auth/register"
+    enabled: false
+    errorChance: 0.2
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos error on registration"}'
+    latencyMs: 800
+
+  - name: "http-auth-forgot-password-delay"
+    type: "http"
+    target: "POST:/api/auth/forgot-password"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 2000
+
+  - name: "http-auth-refresh-error"
+    type: "http"
+    target: "POST:/api/auth/refresh"
+    enabled: false
+    errorChance: 0.15
+    errorCode: 401
+    errorBody: '{"error":"unauthorized","message":"Simulated chaos token refresh failure"}'
+    latencyMs: 500
+
+  - name: "http-auth-me-timeout"
+    type: "http"
+    target: "GET:/api/auth/me"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 2500
+
+  # ── Users ─────────────────────────────────────
+  - name: "http-user-list-delay"
+    type: "http"
+    target: "GET:/api/users"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-user-create-error"
+    type: "http"
+    target: "POST:/api/users"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos user creation failure"}'
+    latencyMs: 500
+
+  # ── Roles ─────────────────────────────────────
+  - name: "http-role-list-delay"
+    type: "http"
+    target: "GET:/api/roles"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 800
+
+  - name: "http-role-create-error"
+    type: "http"
+    target: "POST:/api/roles"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos role creation failure"}'
+    latencyMs: 500
+
+  # ── Merchants ─────────────────────────────────
+  - name: "http-merchant-list-delay"
+    type: "http"
+    target: "GET:/api/merchants"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-merchant-create-error"
+    type: "http"
+    target: "POST:/api/merchants"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos merchant creation failure"}'
+    latencyMs: 500
+
+  # ── Merchant Documents ────────────────────────
+  - name: "http-merchant-document-list-delay"
+    type: "http"
+    target: "GET:/api/merchant-documents"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-merchant-document-create-error"
+    type: "http"
+    target: "POST:/api/merchant-documents"
+    enabled: false
+    errorChance: 0.2
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos document upload failure"}'
+    latencyMs: 600
+
+  # ── Cashiers ──────────────────────────────────
+  - name: "http-cashier-list-delay"
+    type: "http"
+    target: "GET:/api/cashiers"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-cashier-create-error"
+    type: "http"
+    target: "POST:/api/cashiers"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos cashier creation failure"}'
+    latencyMs: 500
+
+  # ── Categories ────────────────────────────────
+  - name: "http-category-list-delay"
+    type: "http"
+    target: "GET:/api/categories"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-category-create-error"
+    type: "http"
+    target: "POST:/api/categories"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos category creation failure"}'
+    latencyMs: 500
+
+  # ── Products ──────────────────────────────────
+  - name: "http-product-list-delay"
+    type: "http"
+    target: "GET:/api/products"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-product-create-error"
+    type: "http"
+    target: "POST:/api/products/create"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos product creation failure"}'
+    latencyMs: 500
+
+  # ── Orders ────────────────────────────────────
+  - name: "http-order-list-delay"
+    type: "http"
+    target: "GET:/api/orders"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-order-create-error"
+    type: "http"
+    target: "POST:/api/orders"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos order creation failure"}'
+    latencyMs: 500
+
+  # ── Transactions ──────────────────────────────
+  - name: "http-transaction-list-delay"
+    type: "http"
+    target: "GET:/api/transactions"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "http-transaction-create-error"
+    type: "http"
+    target: "POST:/api/transactions"
+    enabled: false
+    errorChance: 0.25
+    errorCode: 500
+    errorBody: '{"error":"internal_error","message":"Simulated chaos transaction failure"}'
+    latencyMs: 800
+
+  # ═══════════════════════════════════════════════
+  # SQL — Database table-level chaos
+  # ═══════════════════════════════════════════════
+  - name: "sql-users-deadlock"
+    type: "sql"
+    target: "users"
+    enabled: false
+    errorChance: 0.15
+    errorMessage: "ERROR: deadlock detected (simulated chaos)"
+    latencyMs: 500
+
+  - name: "sql-roles-delay"
+    type: "sql"
+    target: "roles"
+    enabled: false
+    errorChance: 0.15
+    latencyMs: 500
+
+  - name: "sql-user-roles-delay"
+    type: "sql"
+    target: "user_roles"
+    enabled: false
+    errorChance: 0.15
+    latencyMs: 400
+
+  - name: "sql-refresh-tokens-timeout"
+    type: "sql"
+    target: "refresh_tokens"
+    enabled: false
+    errorChance: 0.1
+    latencyMs: 2000
+
+  - name: "sql-reset-tokens-timeout"
+    type: "sql"
+    target: "reset_tokens"
+    enabled: false
+    errorChance: 0.1
+    latencyMs: 2000
+
+  - name: "sql-merchants-delay"
+    type: "sql"
+    target: "merchants"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  - name: "sql-merchant-documents-delay"
+    type: "sql"
+    target: "merchant_documents"
+    enabled: false
+    errorChance: 0.15
+    latencyMs: 900
+
+  - name: "sql-cashiers-delay"
+    type: "sql"
+    target: "cashiers"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 800
+
+  - name: "sql-categories-delay"
+    type: "sql"
+    target: "categories"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 800
+
+  - name: "sql-products-delay"
+    type: "sql"
+    target: "products"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 800
+
+  - name: "sql-orders-timeout"
+    type: "sql"
+    target: "orders"
+    enabled: false
+    errorChance: 0.15
+    errorMessage: "ERROR: query_timeout (simulated chaos)"
+    latencyMs: 1500
+
+  - name: "sql-order-items-delay"
+    type: "sql"
+    target: "order_items"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 800
+
+  - name: "sql-transactions-timeout"
+    type: "sql"
+    target: "transactions"
+    enabled: false
+    errorChance: 0.15
+    errorMessage: "ERROR: query_timeout (simulated chaos)"
+    latencyMs: 1500
+
+  # ═══════════════════════════════════════════════
+  # gRPC — Internal service-level chaos
+  # ═══════════════════════════════════════════════
+
+  # ── Auth ──────────────────────────────────────
+  - name: "grpc-auth-login-unavailable"
+    type: "grpc"
+    target: "pb.AuthService/LoginUser"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated gRPC unavailability for LoginUser"
+    latencyMs: 250
+
+  - name: "grpc-auth-register-timeout"
+    type: "grpc"
+    target: "pb.AuthService/RegisterUser"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "DEADLINE_EXCEEDED"
+    errorMessage: "Simulated gRPC deadline exceeded for RegisterUser"
+    latencyMs: 3000
+
+  - name: "grpc-auth-verify-delay"
+    type: "grpc"
+    target: "pb.AuthService/VerifyCode"
+    enabled: false
+    errorChance: 0.15
+    grpcStatus: "DEADLINE_EXCEEDED"
+    errorMessage: "Simulated gRPC delay for email verification"
+    latencyMs: 2000
+
+  - name: "grpc-auth-forgot-password-delay"
+    type: "grpc"
+    target: "pb.AuthService/ForgotPassword"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "DEADLINE_EXCEEDED"
+    errorMessage: "Simulated forgot password delay"
+    latencyMs: 2000
+
+  - name: "grpc-auth-refresh-error"
+    type: "grpc"
+    target: "pb.AuthService/RefreshToken"
+    enabled: false
+    errorChance: 0.15
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated token refresh failure"
+    latencyMs: 500
+
+  # ── User ──────────────────────────────────────
+  - name: "grpc-user-query-unavailable"
+    type: "grpc"
+    target: "pb.user.UserQueryService/FindAll"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated gRPC unavailability for UserQuery"
+    latencyMs: 200
+
+  - name: "grpc-user-command-error"
+    type: "grpc"
+    target: "pb.user.UserCommandService/Create"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated user creation failure"
+    latencyMs: 500
+
+  # ── Role ──────────────────────────────────────
+  - name: "grpc-role-query-delay"
+    type: "grpc"
+    target: "pb.role.RoleService/FindAllRole"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated role query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-role-assign-error"
+    type: "grpc"
+    target: "pb.role.RoleCommandService/AssignRoleToUser"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated role assignment failure"
+    latencyMs: 500
+
+  # ── Merchant ──────────────────────────────────
+  - name: "grpc-merchant-query-unavailable"
+    type: "grpc"
+    target: "pb.merchant.MerchantQueryService/FindAllMerchant"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated merchant query unavailability"
+    latencyMs: 300
+
+  - name: "grpc-merchant-command-error"
+    type: "grpc"
+    target: "pb.merchant.MerchantCommandService/CreateMerchant"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated merchant creation failure"
+    latencyMs: 500
+
+  # ── Merchant Document ─────────────────────────
+  - name: "grpc-merchant-document-query-delay"
+    type: "grpc"
+    target: "pb.merchant_document.MerchantDocumentQueryService/FindAll"
+    enabled: false
+    errorChance: 0.15
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated merchant document query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-merchant-document-command-error"
+    type: "grpc"
+    target: "pb.merchant_document.MerchantDocumentCommandService/Create"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated merchant document creation failure"
+    latencyMs: 600
+
+  # ── Cashier ───────────────────────────────────
+  - name: "grpc-cashier-query-delay"
+    type: "grpc"
+    target: "pb.cashier.CashierService/FindAll"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated cashier query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-cashier-command-error"
+    type: "grpc"
+    target: "pb.cashier.CashierCommandService/CreateCashier"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated cashier creation failure"
+    latencyMs: 500
+
+  - name: "grpc-cashier-sales-delay"
+    type: "grpc"
+    target: "pb.cashier.stats.CashierSalesService/FindMonthSales"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  - name: "grpc-cashier-total-sales-delay"
+    type: "grpc"
+    target: "pb.cashier.stats.CashierTotalSalesService/FindMonthlyTotalSales"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  # ── Category ──────────────────────────────────
+  - name: "grpc-category-query-delay"
+    type: "grpc"
+    target: "pb.category.CategoryQueryService/FindAll"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated category query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-category-command-error"
+    type: "grpc"
+    target: "pb.category.CategoryCommandService/Create"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated category creation failure"
+    latencyMs: 500
+
+  - name: "grpc-category-price-delay"
+    type: "grpc"
+    target: "pb.category.stats.CategoryPriceService/FindMonthPrice"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  - name: "grpc-category-total-price-delay"
+    type: "grpc"
+    target: "pb.category.stats.CategoryTotalPriceService/FindMonthlyTotalPrices"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  # ── Order ─────────────────────────────────────
+  - name: "grpc-order-query-delay"
+    type: "grpc"
+    target: "pb.order.OrderQueryService/FindAll"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated order query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-order-command-error"
+    type: "grpc"
+    target: "pb.order.OrderCommandService/Create"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "ABORTED"
+    errorMessage: "Simulated order creation aborted"
+    latencyMs: 800
+
+  - name: "grpc-order-soldout-delay"
+    type: "grpc"
+    target: "pb.order.stats.OrderSoldoutService/FindMonthlyRevenue"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  - name: "grpc-order-total-revenue-delay"
+    type: "grpc"
+    target: "pb.order.stats.OrderTotalRevenueService/FindMonthlyTotalRevenue"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  # ── Order Item ────────────────────────────────
+  - name: "grpc-order-item-query-delay"
+    type: "grpc"
+    target: "pb.order_item.OrderItemService/FindAll"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated order item query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-order-item-command-error"
+    type: "grpc"
+    target: "pb.order_item.OrderItemCommandService/CreateOrderItem"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated order item creation failure"
+    latencyMs: 500
+
+  # ── Product ───────────────────────────────────
+  - name: "grpc-product-query-delay"
+    type: "grpc"
+    target: "pb.product.ProductService/FindAll"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated product query unavailability"
+    latencyMs: 800
+
+  - name: "grpc-product-command-error"
+    type: "grpc"
+    target: "pb.product.ProductCommandService/Create"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "INTERNAL"
+    errorMessage: "Simulated product creation failure"
+    latencyMs: 500
+
+  # ── Transaction ───────────────────────────────
+  - name: "grpc-transaction-create-error"
+    type: "grpc"
+    target: "pb.transaction.TransactionCommandService/CreateTransaction"
+    enabled: false
+    errorChance: 0.25
+    grpcStatus: "ABORTED"
+    errorMessage: "Simulated transaction creation aborted"
+    latencyMs: 800
+
+  - name: "grpc-transaction-query-delay"
+    type: "grpc"
+    target: "pb.transaction.TransactionQueryService/FindAllTransaction"
+    enabled: false
+    errorChance: 0.2
+    grpcStatus: "UNAVAILABLE"
+    errorMessage: "Simulated transaction query unavailability"
+    latencyMs: 1000
+
+  - name: "grpc-transaction-stats-amount-delay"
+    type: "grpc"
+    target: "pb.transaction.stats.TransactionStatsAmountService/FindMonthlyAmounts"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1200
+
+  - name: "grpc-transaction-stats-method-delay"
+    type: "grpc"
+    target: "pb.transaction.stats.TransactionStatsMethodService/FindMonthlyPaymentMethods"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  - name: "grpc-transaction-stats-status-delay"
+    type: "grpc"
+    target: "pb.transaction.stats.TransactionStatsStatusService/FindMonthlyTransactionStatusSuccess"
+    enabled: false
+    errorChance: 0.2
+    latencyMs: 1000
+
+  # ═══════════════════════════════════════════════
+  # Infrastructure — CPU / Memory pressure
+  # ═══════════════════════════════════════════════
+  - name: "cpu-pressure-test"
+    type: "cpu"
+    enabled: false
+    cpuCores: 2
+    duration: "2m"
+
+  - name: "memory-leak-test"
+    type: "memory"
+    enabled: false
+    memoryMb: 100
+    duration: "2m"
+
+  # ═══════════════════════════════════════════════
+  # Kafka — Message drop / delay per topic
+  # ═══════════════════════════════════════════════
+  - name: "kafka-auth-register-drop"
+    type: "kafka"
+    target: "email-service-topic-auth-register"
+    enabled: false
+    errorChance: 0.15
+    dropMessage: true
+    rejectMessage: false
+    latencyMs: 200
+
+  - name: "kafka-auth-forgot-password-delay"
+    type: "kafka"
+    target: "email-service-topic-auth-forgot-password"
+    enabled: false
+    errorChance: 0.2
+    dropMessage: false
+    rejectMessage: false
+    latencyMs: 1500
+
+  - name: "kafka-auth-verify-code-success-delay"
+    type: "kafka"
+    target: "email-service-topic-auth-verify-code-success"
+    enabled: false
+    errorChance: 0.15
+    dropMessage: false
+    rejectMessage: false
+    latencyMs: 1000
+
+  - name: "kafka-transaction-create-delay"
+    type: "kafka"
+    target: "email-service-topic-transaction-create"
+    enabled: false
+    errorChance: 0.2
+    dropMessage: false
+    rejectMessage: false
+    latencyMs: 2000
+
+  - name: "kafka-merchant-create-drop"
+    type: "kafka"
+    target: "email-service-topic-merchant-create"
+    enabled: false
+    errorChance: 0.15
+    dropMessage: true
+    rejectMessage: false
+    latencyMs: 300
+
+  - name: "kafka-merchant-update-status-delay"
+    type: "kafka"
+    target: "email-service-topic-merchant-update-status"
+    enabled: false
+    errorChance: 0.2
+    dropMessage: false
+    rejectMessage: false
+    latencyMs: 1000
+
+  - name: "kafka-merchant-document-create-drop"
+    type: "kafka"
+    target: "email-service-topic-merchant-document-create"
+    enabled: false
+    errorChance: 0.15
+    dropMessage: true
+    rejectMessage: false
+    latencyMs: 300
+
+  - name: "kafka-merchant-document-update-status-delay"
+    type: "kafka"
+    target: "email-service-topic-merchant-document-update-status"
+    enabled: false
+    errorChance: 0.15
+    dropMessage: false
+    rejectMessage: false
+    latencyMs: 1000

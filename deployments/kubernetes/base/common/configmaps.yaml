@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: pointofsale
+data:
+  APP_ENV: "kubernetes"
+  DB_DRIVER: "postgres"
+  DB_HOST: "postgres"
+  DB_HOST_MIGRATE: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "POINT_OF_SALE"
+  POSTGRES_DB: "POINT_OF_SALE"
+  DB_MAX_OPEN_CONNS: "50"
+  DB_MAX_IDLE_CONNS: "10"
+  DB_CONN_MAX_LIFETIME: "30m"
+  DB_SEEDER: "false"
+  APP_LOGGER: "production"
+
+  OTEL_ENDPOINT: "otel-collector.pointofsale.svc.cluster.local:4317"
+  KAFKA_BROKERS: "kafka.pointofsale.svc.cluster.local:9092"
+
+  # Fase 14 (K-6): client memakai SASL_SSL + SCRAM-SHA-256 ke broker produksi.
+  # Kredensial + JAAS dari secret `app-secrets`; truststore JKS di-mount dari
+  # secret `kafka-tls` (lihat catatan mount di tiap deployment / runbook).
+  KAFKA_SECURITY_PROTOCOL: "SASL_SSL"
+  KAFKA_SASL_MECHANISM: "SCRAM-SHA-256"
+  KAFKA_SSL_TRUSTSTORE_TYPE: "JKS"
+  KAFKA_SSL_TRUSTSTORE_LOCATION: "/certs/kafka.truststore.jks"
+
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_CLUSTER_ENABLED: "true"
+  REDIS_CLUSTER_ENDPOINTS: "redis-cluster-0.redis-cluster-headless.pointofsale.svc.cluster.local:6379,redis-cluster-1.redis-cluster-headless.pointofsale.svc.cluster.local:6379,redis-cluster-2.redis-cluster-headless.pointofsale.svc.cluster.local:6379,redis-cluster-3.redis-cluster-headless.pointofsale.svc.cluster.local:6379,redis-cluster-4.redis-cluster-headless.pointofsale.svc.cluster.local:6379,redis-cluster-5.redis-cluster-headless.pointofsale.svc.cluster.local:6379"
+
+  GRPC_USER_ADDR: user.pointofsale.svc.cluster.local:9011
+  GRPC_AUTH_ADDR: auth.pointofsale.svc.cluster.local:9012
+  GRPC_ROLE_ADDR: role.pointofsale.svc.cluster.local:9006
+  GRPC_MERCHANT_ADDR: merchant.pointofsale.svc.cluster.local:9005
+  GRPC_TRANSACTION_ADDR: transaction.pointofsale.svc.cluster.local:9009
+  GRPC_CASHIER_ADDR: cashier.pointofsale.svc.cluster.local:9014
+  GRPC_CATEGORY_ADDR: category.pointofsale.svc.cluster.local:9015
+  GRPC_PRODUCT_ADDR: product.pointofsale.svc.cluster.local:9003
+  GRPC_ORDER_ADDR: order.pointofsale.svc.cluster.local:9001
+  GRPC_ORDER_ITEM_ADDR: order-item.pointofsale.svc.cluster.local:9016
+
+  GRPC_USER_PORT: "9011"
+  GRPC_AUTH_PORT: "9012"
+  GRPC_ROLE_PORT: "9006"
+  GRPC_MERCHANT_PORT: "9005"
+  GRPC_TRANSACTION_PORT: "9009"
+  GRPC_CASHIER_PORT: "9014"
+  GRPC_CATEGORY_PORT: "9015"
+  GRPC_PRODUCT_PORT: "9003"
+  GRPC_ORDER_PORT: "9001"
+  GRPC_ORDER_ITEM_PORT: "9016"
+
+  SECRET_KEY: "yantopedia"
+  DB_URL: "postgres://DRAGON:DRAGON@postgres:5432/POINT_OF_SALE"

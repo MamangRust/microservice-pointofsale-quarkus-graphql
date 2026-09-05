@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cashier
+  namespace: pointofsale
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cashier
+  template:
+    metadata:
+      labels:
+        app: cashier
+    spec:
+      initContainers:
+        - name: init-log-permission
+          image: busybox:1.35
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "[INIT] Setting ownership for /var/log/app"
+              chown -R 1000:1000 /var/log/app
+          volumeMounts:
+            - name: app-logs
+              mountPath: /var/log/app
+          securityContext:
+            runAsUser: 0
+      containers:
+        - name: cashier
+          image: quarkus-grpc-pointofsale/cashier:latest
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          env:
+            - name: GRPC_PORT
+              value: "9014"
+            - name: QUARKUS_GRPC_SERVER_PORT
+              value: "9014"
+          ports:
+            - containerPort: 9014
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "250m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          readinessProbe:
+            tcpSocket:
+              port: 9014
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 5
+          volumeMounts:
+            - name: app-logs
+              mountPath: /var/log/app
+      volumes:
+        - name: app-logs
+          persistentVolumeClaim:
+            claimName: app-logs-pvc

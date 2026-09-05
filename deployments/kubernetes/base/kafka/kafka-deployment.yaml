@@ -1,0 +1,130 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  namespace: pointofsale
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+        - name: kafka
+          image: bitnami/kafka:latest
+          env:
+            - name: KAFKA_CFG_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_CFG_NODE_ID
+              value: "1"
+            - name: KAFKA_CFG_CONTROLLER_QUORUM_VOTERS
+              value: "1@localhost:9093"
+            - name: KAFKA_CFG_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            # Fase 14 (K-6): listener produksi = SASL_SSL (SCRAM-SHA-256 + TLS).
+            # Tidak ada listener PLAINTEXT di konfigurasi produksi ini.
+            - name: KAFKA_CFG_LISTENERS
+              value: "SASL_SSL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
+            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+              value: "SASL_SSL://kafka.pointofsale.svc.cluster.local:9092"
+            - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:SASL_PLAINTEXT,SASL_SSL:SASL_SSL"
+            - name: KAFKA_CLIENT_LISTENER_NAME
+              value: "SASL_SSL"
+            - name: KAFKA_CFG_SASL_ENABLED_MECHANISMS
+              value: "SCRAM-SHA-256"
+            # KRaft controller comms: hanya PLAIN yang didukung untuk kontrol plane.
+            - name: KAFKA_CFG_SASL_MECHANISM_CONTROLLER_PROTOCOL
+              value: "PLAIN"
+            - name: KAFKA_CONTROLLER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CONTROLLER_USER
+            - name: KAFKA_CONTROLLER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CONTROLLER_PASSWORD
+            # SASL/SCRAM credentials untuk client (service apps + kafka-exporter).
+            - name: KAFKA_CLIENT_USERS
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CLIENT_USER
+            - name: KAFKA_CLIENT_PASSWORDS
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CLIENT_PASSWORD
+            # TLS (JKS): keystore/truststore di-mount dari secret `kafka-tls`
+            # ke /opt/bitnami/kafka/config/certs (lihat kafka-tls-secret.yaml
+            # dan runbook Fase 14 untuk pembuatan sertifikat).
+            - name: KAFKA_TLS_TYPE
+              value: "JKS"
+            - name: KAFKA_CERTIFICATE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secrets
+                  key: KAFKA_CERTIFICATE_PASSWORD
+            - name: KAFKA_KRAFT_CLUSTER_ID
+              value: "kraft-cluster-01"
+            - name: ALLOW_PLAINTEXT_LISTENER
+              value: "no"
+            - name: KAFKA_CFG_LOG_LEVEL
+              value: "INFO"
+            - name: BITNAMI_DEBUG
+              value: "true"
+            # Fase 14 (K-7): topik auto-created memakai 3 partition agar consumer
+            # email-service bisa diskalakan (>1 replica / HPA).
+            - name: KAFKA_CFG_NUM_PARTITIONS
+              value: "3"
+          ports:
+            - containerPort: 9092
+            - containerPort: 9093
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /bitnami/kafka
+            - name: kafka-tls
+              mountPath: /opt/bitnami/kafka/config/certs
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          startupProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+      volumes:
+        - name: kafka-data
+          persistentVolumeClaim:
+            claimName: kafka
+        - name: kafka-tls
+          secret:
+            secretName: kafka-tls
+            optional: true

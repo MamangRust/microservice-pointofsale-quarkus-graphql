@@ -1,0 +1,62 @@
+groups:
+  - name: stats-pipeline-alerts
+    rules:
+      # Outbox lag growing
+      - alert: OutboxLagGrowing
+        expr: outbox_pending_total > 5000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Outbox lag growing"
+          description: "More than 5000 pending outbox rows for 5 minutes"
+
+      # Outbox lag critical
+      - alert: OutboxLagCritical
+        expr: outbox_pending_total > 50000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox lag critical"
+          description: "More than 50000 pending outbox rows - Kafka may be down"
+
+      # Stats writer flush errors
+      - alert: StatsWriterFlushErrors
+        expr: rate(stats_writer_flush_errors_total[5m]) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stats writer flush errors"
+          description: "More than 2 flush errors per second to ClickHouse"
+
+      # Stats reader cache hit rate low
+      - alert: StatsReaderCacheHitRateLow
+        expr: stats_reader_cache_hit_rate < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stats reader cache hit rate low"
+          description: "Cache hit rate below 50% for 10 minutes"
+
+      # Stats reader latency high
+      - alert: StatsReaderLatencyHigh
+        expr: histogram_quantile(0.95, rate(stats_reader_query_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stats reader latency high"
+          description: "P95 query latency above 2 seconds"
+
+      # ClickHouse connection errors
+      - alert: ClickHouseConnectionErrors
+        expr: rate(clickhouse_connection_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ClickHouse connection errors"
+          description: "ClickHouse connection errors detected"

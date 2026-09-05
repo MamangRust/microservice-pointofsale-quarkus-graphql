@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/cashier';
+
+package pb.cashier;
+
+import "common/api.proto";
+import "cashier/cashier.proto";
+
+message ApiResponsePaginationCashierDeleteAt {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponseDeleteAt data = 3;
+  pb.common.PaginationMeta pagination = 4;
+}
+
+message ApiResponsePaginationCashier {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponse data = 3;
+  pb.common.PaginationMeta pagination = 4;
+}
+
+service CashierService {
+  rpc FindAll(FindAllCashierRequest) returns (ApiResponsePaginationCashier) {}
+  rpc FindById(FindByIdCashierRequest) returns (ApiResponseCashier) {}
+
+  rpc FindByActive(FindAllCashierRequest) returns (ApiResponsePaginationCashierDeleteAt) {}
+  rpc FindByTrashed(FindAllCashierRequest) returns (ApiResponsePaginationCashierDeleteAt) {}
+
+  rpc FindByMerchant(FindByMerchantCashierRequest) returns (ApiResponsePaginationCashier) {}
+}

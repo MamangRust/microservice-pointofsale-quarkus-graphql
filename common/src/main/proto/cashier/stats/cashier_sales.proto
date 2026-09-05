@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/cashier/stats';
+
+package pb.cashier.stats;
+
+import "cashier/cashier.proto";
+
+service CashierSalesService {
+  rpc FindMonthSales(FindYearCashier) returns (ApiResponseCashierMonthSales) {}
+  rpc FindYearSales(FindYearCashier) returns (ApiResponseCashierYearSales) {}
+  rpc FindMonthSalesByMerchant(FindYearCashierByMerchant) returns (ApiResponseCashierMonthSales) {}
+  rpc FindYearSalesByMerchant(FindYearCashierByMerchant) returns (ApiResponseCashierYearSales) {}
+
+  rpc FindMonthSalesById(FindYearCashierById) returns (ApiResponseCashierMonthSales) {}
+  rpc FindYearSalesById(FindYearCashierById) returns (ApiResponseCashierYearSales) {}
+}

@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/order_item';
+
+package pb.order_item;
+
+import "common/api.proto";
+import "order_item/order_item.proto";
+
+message ApiResponsePaginationOrderItem {
+    string status = 1;
+    string message = 2;
+    repeated OrderItemResponse data = 3;
+    pb.common.PaginationMeta paginationMeta = 4;
+}
+
+message ApiResponsePaginationOrderItemDeleteAt {
+    string status = 1;
+    string message = 2;
+    repeated OrderItemResponseDeleteAt data = 3;
+    pb.common.PaginationMeta paginationMeta = 4;
+}
+
+service OrderItemService {
+    rpc FindAll(FindAllOrderItemRequest) returns (ApiResponsePaginationOrderItem) {}
+    rpc FindByActive(FindAllOrderItemRequest) returns (ApiResponsePaginationOrderItemDeleteAt) {}
+    rpc FindByTrashed(FindAllOrderItemRequest) returns (ApiResponsePaginationOrderItemDeleteAt) {}
+    rpc FindOrderItemByOrder(FindByIdOrderItemRequest) returns (ApiResponsesOrderItem) {}
+}

@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/order_item';
+
+package pb.order_item;
+
+import "google/protobuf/empty.proto";
+import "order_item/order_item.proto";
+
+message CreateOrderItemRequest {
+    int32 order_id = 1;
+    int32 product_id = 2;
+    int32 quantity = 3;
+    int32 price = 4;
+}
+
+message UpdateOrderItemRequest {
+    int32 order_item_id = 1;
+    int32 order_id = 2;
+    int32 product_id = 3;
+    int32 quantity = 4;
+    int32 price = 5;
+}
+
+service OrderItemCommandService {
+    rpc CreateOrderItem(CreateOrderItemRequest) returns (ApiResponseOrderItem) {}
+    rpc UpdateOrderItem(UpdateOrderItemRequest) returns (ApiResponseOrderItem) {}
+    rpc TrashedOrderItem(FindByIdOrderItemRequest) returns (ApiResponseOrderItemDeleteAt) {}
+    rpc RestoreOrderItem(FindByIdOrderItemRequest) returns (ApiResponseOrderItemDeleteAt) {}
+    rpc DeleteOrderItemPermanent(FindByIdOrderItemRequest) returns (ApiResponseOrderItemDelete) {}
+    rpc RestoreAllOrderItem(google.protobuf.Empty) returns (ApiResponseOrderItemAll) {}
+    rpc DeleteAllOrderItemPermanent(google.protobuf.Empty) returns (ApiResponseOrderItemAll) {}
+}

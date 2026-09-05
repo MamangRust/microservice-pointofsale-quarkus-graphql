@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/category/stats';
+
+package pb.category.stats;
+
+import "category/category.proto";
+
+service CategoryTotalPriceService {
+  rpc FindMonthlyTotalPrices(FindYearMonthTotalPrices) returns (ApiResponseCategoryMonthlyTotalPrice) {}
+  rpc FindYearlyTotalPrices(FindYearTotalPrices) returns (ApiResponseCategoryYearlyTotalPrice) {}
+
+  rpc FindMonthlyTotalPricesById(FindYearMonthTotalPriceById) returns (ApiResponseCategoryMonthlyTotalPrice) {}
+  rpc FindYearlyTotalPricesById(FindYearTotalPriceById) returns (ApiResponseCategoryYearlyTotalPrice) {}
+
+  rpc FindMonthlyTotalPricesByMerchant(FindYearMonthTotalPriceByMerchant) returns (ApiResponseCategoryMonthlyTotalPrice) {}
+  rpc FindYearlyTotalPricesByMerchant(FindYearTotalPriceByMerchant) returns (ApiResponseCategoryYearlyTotalPrice) {}
+}

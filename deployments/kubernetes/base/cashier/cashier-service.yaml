@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cashier
+  namespace: pointofsale
+spec:
+  selector:
+    app: cashier
+  ports:
+    - name: grpc
+      port: 9014
+      targetPort: 9014
+  type: ClusterIP

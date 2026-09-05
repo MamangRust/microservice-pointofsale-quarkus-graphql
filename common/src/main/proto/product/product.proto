@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/product';
+
+package pb.product;
+
+import "google/protobuf/wrappers.proto";
+
+message FindAllProductRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+    string search = 3;
+}
+
+message FindAllProductMerchantRequest {
+    int32 merchant_id = 1;
+    string search = 2;
+    int32 category_id = 3;
+    int32 min_price = 4;
+    int32 max_price = 5;
+    int32 page = 6;
+    int32 page_size = 7;
+}
+
+message FindAllProductCategoryRequest {
+    string category_name = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+    string search = 4;
+    int32 minprice = 5;
+    int32 maxprice = 6;
+}
+
+message FindByIdProductRequest {
+    int32 id = 1;
+}
+
+message ProductResponse {
+    int32 id = 1;
+    int32 merchant_id = 2;
+    int32 category_id = 3;
+    string name = 4;
+    string description = 5;
+    int32 price = 6;
+    int32 count_in_stock = 7;
+    string brand = 8;
+    int32 weight = 9;
+    float rating = 10;
+    string slug_product = 11;
+    string image_product = 12;
+    string barcode = 13;
+    string created_at = 14;
+    string updated_at = 15;
+}
+  
+message ProductResponseDeleteAt {
+    int32 id = 1;
+    int32 merchant_id = 2;
+    int32 category_id = 3;
+    string name = 4;
+    string description = 5;
+    int32 price = 6;
+    int32 count_in_stock = 7;
+    string brand = 8;
+    int32 weight = 9;
+    float rating = 10;
+    string slug_product = 11;
+    string image_product = 12;
+    string barcode = 13;
+    string created_at = 14;
+    string updated_at = 15;
+    google.protobuf.StringValue deleted_at = 16;
+}
+
+message ApiResponseProduct {
+    string status = 1;
+    string message = 2;
+    ProductResponse data = 3;
+}
+
+message ApiResponseProductDeleteAt {
+    string status = 1;
+    string message = 2;
+    ProductResponseDeleteAt data = 3;
+}
+
+message ApiResponsesProduct {
+    string status = 1;
+    string message = 2;
+    repeated ProductResponse data = 3;
+}

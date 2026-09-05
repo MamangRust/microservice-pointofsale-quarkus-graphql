@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/cashier/stats';
+
+package pb.cashier.stats;
+
+import "cashier/cashier.proto";
+
+message ApiResponseCashierMonthlyTotalSales {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponseMonthTotalSales data = 3;
+}
+
+message ApiResponseCashierYearlyTotalSales {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponseYearTotalSales data = 3;
+}
+
+service CashierTotalSalesService {
+  rpc FindMonthlyTotalSales(FindYearMonthTotalSales) returns (ApiResponseCashierMonthlyTotalSales) {}
+  rpc FindYearlyTotalSales(FindYearTotalSales) returns (ApiResponseCashierYearlyTotalSales) {}
+
+  rpc FindMonthlyTotalSalesById(FindYearMonthTotalSalesById) returns (ApiResponseCashierMonthlyTotalSales) {}
+  rpc FindYearlyTotalSalesById(FindYearTotalSalesById) returns (ApiResponseCashierYearlyTotalSales) {}
+
+  rpc FindMonthlyTotalSalesByMerchant(FindYearMonthTotalSalesByMerchant) returns (ApiResponseCashierMonthlyTotalSales) {}
+  rpc FindYearlyTotalSalesByMerchant(FindYearTotalSalesByMerchant) returns (ApiResponseCashierYearlyTotalSales) {}
+}

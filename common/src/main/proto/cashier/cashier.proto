@@ -1,0 +1,166 @@
+syntax = "proto3";
+
+option go_package = 'github.com/MamangRust/monolith-payment-gateway-pb/cashier';
+
+package pb.cashier;
+
+import "google/protobuf/wrappers.proto";
+
+message FindAllCashierRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+  string search = 3;
+}
+
+message FindByMerchantCashierRequest {
+  int32 merchant_id = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+  string search = 4;
+}
+
+message FindByIdCashierRequest {
+  int32 id = 1;
+}
+
+message FindYearCashier {
+  int32 year = 1;
+}
+
+message FindYearCashierByMerchant {
+  int32 merchant_id = 1;
+  int32 year = 2;
+}
+
+message FindYearCashierById {
+  int32 cashier_id = 1;
+  int32 year = 2;
+}
+
+message FindYearMonthTotalSales {
+  int32 year = 1;
+  int32 month = 2;
+}
+
+message FindYearTotalSales {
+  int32 year = 1;
+}
+
+message FindYearMonthTotalSalesById {
+  int32 year = 1;
+  int32 month = 2;
+  int32 cashier_id = 3;
+}
+
+message FindYearTotalSalesById {
+  int32 year = 1;
+  int32 cashier_id = 2;
+}
+
+message FindYearMonthTotalSalesByMerchant {
+  int32 year = 1;
+  int32 month = 2;
+  int32 merchant_id = 3;
+}
+
+message FindYearTotalSalesByMerchant {
+  int32 year = 1;
+  int32 merchant_id = 2;
+}
+
+message CreateCashierRequest {
+  int32 merchant_id = 1;
+  int32 user_id = 2;
+  string name = 3;
+}
+
+message UpdateCashierRequest {
+  int32 cashier_id = 1;
+  string name = 2;
+}
+
+message CashierResponse {
+  int32 id = 1;
+  int32 merchant_id = 2;
+  string name = 3;
+  string created_at = 4;
+  string updated_at = 5;
+}
+
+message CashierResponseDeleteAt {
+  int32 id = 1;
+  int32 merchant_id = 2;
+  string name = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  google.protobuf.StringValue deleted_at = 6;
+}
+
+message CashierResponseMonthSales {
+  string month = 1;
+  int32 cashier_id = 2;
+  string cashier_name = 3;
+  int32 order_count = 4;
+  int32 total_sales = 5;
+}
+
+message CashierResponseYearSales {
+  string year = 1;
+  int32 cashier_id = 2;
+  string cashier_name = 3;
+  int32 order_count = 4;
+  int32 total_sales = 5;
+}
+
+message CashierResponseMonthTotalSales {
+  string year = 1;
+  string month = 2;
+  int32 total_sales = 6;
+}
+
+message CashierResponseYearTotalSales {
+  string year = 1;
+  int32 total_sales = 2;
+}
+
+message ApiResponseCashierMonthSales {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponseMonthSales data = 3;
+}
+
+message ApiResponseCashierYearSales {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponseYearSales data = 3;
+}
+
+message ApiResponseCashierMonthlyTotalSales {
+  string status = 1;
+  string message = 2;
+  CashierResponseMonthTotalSales data = 3;
+}
+
+message ApiResponseCashierYearlyTotalSales {
+  string status = 1;
+  string message = 2;
+  CashierResponseYearTotalSales data = 3;
+}
+
+message ApiResponseCashier {
+  string status = 1;
+  string message = 2;
+  CashierResponse data = 3;
+}
+
+message ApiResponseCashierDeleteAt {
+  string status = 1;
+  string message = 2;
+  CashierResponseDeleteAt data = 3;
+}
+
+message ApiResponsesCashier {
+  string status = 1;
+  string message = 2;
+  repeated CashierResponse data = 3;
+}
