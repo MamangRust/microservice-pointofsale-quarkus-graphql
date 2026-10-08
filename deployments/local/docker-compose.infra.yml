@@ -1,0 +1,453 @@
+# Infra-only compose — dipakai untuk development/E2E lokal.
+# HANYA infrastruktur: PostgreSQL, PgBouncer, redis, ClickHouse, dan observability tools.
+# Semua microservice + apigateway dijalankan LOKAL (go run / bin/),
+# sehingga memakai .env root (localhost).
+#
+# Jalankan: podman compose -f deployments/local/docker-compose.infra.yml up -d
+# Satu database = satu bounded context. Tiap context punya instance PostgreSQL
+# sendiri di depan PgBouncer-nya sendiri; port host pooler 6432-6436 dipakai
+# service yang dijalankan di HOST lewat DB_<CONTEXT>_HOST/_PORT/_NAME di .env root.
+services:
+  postgres_identity:
+    image: postgres:17-alpine
+    container_name: pos-postgres-identity
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_identity
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_identity_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_identity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_identity:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-identity
+    environment:
+      DB_HOST: postgres_identity
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_identity
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6432:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_identity:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_identity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_merchant:
+    image: postgres:17-alpine
+    container_name: pos-postgres-merchant
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_merchant
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_merchant_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_merchant"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_merchant:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-merchant
+    environment:
+      DB_HOST: postgres_merchant
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_merchant
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6433:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_merchant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_merchant"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_catalog:
+    image: postgres:17-alpine
+    container_name: pos-postgres-catalog
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_catalog
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_catalog_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_catalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_catalog:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-catalog
+    environment:
+      DB_HOST: postgres_catalog
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_catalog
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6434:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_catalog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_catalog"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_sales:
+    image: postgres:17-alpine
+    container_name: pos-postgres-sales
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_sales
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_sales_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_sales"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_sales:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-sales
+    environment:
+      DB_HOST: postgres_sales
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_sales
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6435:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_sales:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_sales"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_email:
+    image: postgres:17-alpine
+    container_name: pos-postgres-email
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_email
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_email_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_email"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_email:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-email
+    environment:
+      DB_HOST: postgres_email
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_email
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6436:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_email:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_email"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Redis tunggal untuk semua service lokal (localhost:6379).
+  redis:
+    image: redis:7.4
+    container_name: redis_pointofsale
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_pointofsale_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a dragon_knight ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  pyroscope:
+    image: grafana/pyroscope:latest
+    ports:
+      - "4040:4040"
+    networks:
+      - app_pointofsale_network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus_pointofsale
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../observability/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ../../observability/rules:/etc/prometheus/rules
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_pointofsale
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_pointofsale-storage:/var/lib/grafana
+      - ../../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      - prometheus
+      - jaeger
+      - alertmanager
+      - loki
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter
+    container_name: node-exporter_pointofsale
+    pid: "host"
+    networks:
+      - app_pointofsale_network
+    volumes:
+      - "/:/host:ro,rslave"
+    command:
+      - '--path.rootfs=/host'
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector_pointofsale
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ../../observability/otel-collector.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+      - "8889:8889"
+    networks:
+      - app_pointofsale_network
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: jaeger_pointofsale
+    ports:
+      - "6831:6831/udp"
+      - "16686:16686"
+    networks:
+      - app_pointofsale_network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager_pointofsale
+    volumes:
+      - ../../observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    ports:
+      - "9093:9093"
+    networks:
+      - app_pointofsale_network
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki_pointofsale
+    ports:
+      - "3100:3100"
+    volumes:
+      - ../../observability/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_pointofsale_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - app_pointofsale_network
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: my-kafka-pointofsale
+    hostname: kafka
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_CLUSTER_ID: kraft-cluster-01
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.9.0
+    container_name: kafka-exporter_pointofsale
+    ports:
+      - "9308:9308"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - "--kafka.server=my-kafka-pointofsale:9092"
+      - "--web.listen-address=0.0.0.0:9308"
+      - "--log.level=debug"
+    restart: unless-stopped
+
+  # ClickHouse — OLAP engine for the stats pipeline (F3).
+  # CLICKHOUSE_USER/PASSWORD/DB are required: pkg/clickhouse connects as
+  # CLICKHOUSE_USERNAME/CLICKHOUSE_PASSWORD (dragon/dragon_knight), and the
+  # official image only creates that user when these env vars are set.
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: clickhouse-pointofsale
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      CLICKHOUSE_DB: pos
+      CLICKHOUSE_USER: dragon
+      CLICKHOUSE_PASSWORD: dragon_knight
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_pointofsale_data:/var/lib/clickhouse
+      - ../../pkg/clickhouse/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user dragon --password dragon_knight --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  postgres_identity_data:
+  postgres_merchant_data:
+  postgres_catalog_data:
+  postgres_sales_data:
+  postgres_email_data:
+  loki_pointofsale_data:
+  grafana_pointofsale-storage:
+  redis_pointofsale_data:
+  clickhouse_pointofsale_data:
+
+networks:
+  app_pointofsale_network:
+    driver: bridge

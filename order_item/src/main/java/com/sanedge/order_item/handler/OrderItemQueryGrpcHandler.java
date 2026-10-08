@@ -32,28 +32,18 @@ public class OrderItemQueryGrpcHandler extends MutinyOrderItemServiceGrpc.OrderI
         return orderItemQueryService.findAll(req)
                 .map(apiRes -> {
                     if ("success".equals(apiRes.status()) && apiRes.data() != null) {
-                        var pagedData = apiRes.data();
-                        var pbList = pagedData.getData().stream()
+                        var pbList = apiRes.data().stream()
                                 .map(this::mapResponse)
                                 .collect(Collectors.toList());
 
-                        int totalRecords = pagedData.getTotalRecords();
-                        int pageSize = request.getPageSize() > 0 ? request.getPageSize() : 1;
-                        int totalPages = (int) Math.ceil((double) totalRecords / pageSize);
-
-                        var meta = PaginationMeta.newBuilder()
-                                .setCurrentPage(request.getPage())
-                                .setPageSize(request.getPageSize())
-                                .setTotalPages(totalPages)
-                                .setTotalRecords(totalRecords)
-                                .build();
-
-                        return ApiResponsePaginationOrderItem.newBuilder()
+                        var builder = ApiResponsePaginationOrderItem.newBuilder()
                                 .setStatus("success")
                                 .setMessage(apiRes.message())
-                                .addAllData(pbList)
-                                .setPaginationMeta(meta)
-                                .build();
+                                .addAllData(pbList);
+                        if (apiRes.pagination() != null) {
+                            builder.setPaginationMeta(toProto(apiRes.pagination()));
+                        }
+                        return builder.build();
                     } else {
                         return ApiResponsePaginationOrderItem.newBuilder()
                                 .setStatus("failed")
@@ -77,28 +67,18 @@ public class OrderItemQueryGrpcHandler extends MutinyOrderItemServiceGrpc.OrderI
         return orderItemQueryService.findByActive(req)
                 .map(apiRes -> {
                     if ("success".equals(apiRes.status()) && apiRes.data() != null) {
-                        var pagedData = apiRes.data();
-                        var pbList = pagedData.getData().stream()
+                        var pbList = apiRes.data().stream()
                                 .map(this::mapResponseDeleteAt)
                                 .collect(Collectors.toList());
 
-                        int totalRecords = pagedData.getTotalRecords();
-                        int pageSize = request.getPageSize() > 0 ? request.getPageSize() : 1;
-                        int totalPages = (int) Math.ceil((double) totalRecords / pageSize);
-
-                        var meta = PaginationMeta.newBuilder()
-                                .setCurrentPage(request.getPage())
-                                .setPageSize(request.getPageSize())
-                                .setTotalPages(totalPages)
-                                .setTotalRecords(totalRecords)
-                                .build();
-
-                        return ApiResponsePaginationOrderItemDeleteAt.newBuilder()
+                        var builder = ApiResponsePaginationOrderItemDeleteAt.newBuilder()
                                 .setStatus("success")
                                 .setMessage(apiRes.message())
-                                .addAllData(pbList)
-                                .setPaginationMeta(meta)
-                                .build();
+                                .addAllData(pbList);
+                        if (apiRes.pagination() != null) {
+                            builder.setPaginationMeta(toProto(apiRes.pagination()));
+                        }
+                        return builder.build();
                     } else {
                         return ApiResponsePaginationOrderItemDeleteAt.newBuilder()
                                 .setStatus("failed")
@@ -122,28 +102,18 @@ public class OrderItemQueryGrpcHandler extends MutinyOrderItemServiceGrpc.OrderI
         return orderItemQueryService.findByTrashed(req)
                 .map(apiRes -> {
                     if ("success".equals(apiRes.status()) && apiRes.data() != null) {
-                        var pagedData = apiRes.data();
-                        var pbList = pagedData.getData().stream()
+                        var pbList = apiRes.data().stream()
                                 .map(this::mapResponseDeleteAt)
                                 .collect(Collectors.toList());
 
-                        int totalRecords = pagedData.getTotalRecords();
-                        int pageSize = request.getPageSize() > 0 ? request.getPageSize() : 1;
-                        int totalPages = (int) Math.ceil((double) totalRecords / pageSize);
-
-                        var meta = PaginationMeta.newBuilder()
-                                .setCurrentPage(request.getPage())
-                                .setPageSize(request.getPageSize())
-                                .setTotalPages(totalPages)
-                                .setTotalRecords(totalRecords)
-                                .build();
-
-                        return ApiResponsePaginationOrderItemDeleteAt.newBuilder()
+                        var builder = ApiResponsePaginationOrderItemDeleteAt.newBuilder()
                                 .setStatus("success")
                                 .setMessage(apiRes.message())
-                                .addAllData(pbList)
-                                .setPaginationMeta(meta)
-                                .build();
+                                .addAllData(pbList);
+                        if (apiRes.pagination() != null) {
+                            builder.setPaginationMeta(toProto(apiRes.pagination()));
+                        }
+                        return builder.build();
                     } else {
                         return ApiResponsePaginationOrderItemDeleteAt.newBuilder()
                                 .setStatus("failed")
@@ -183,6 +153,15 @@ public class OrderItemQueryGrpcHandler extends MutinyOrderItemServiceGrpc.OrderI
                         .setStatus("failed")
                         .setMessage(err.getMessage())
                         .build());
+    }
+
+    private PaginationMeta toProto(com.sanedge.common.domain.response.PaginationMeta m) {
+        return PaginationMeta.newBuilder()
+                .setCurrentPage(m.currentPage())
+                .setPageSize(m.pageSize())
+                .setTotalPages(m.totalPages())
+                .setTotalRecords(m.totalRecords())
+                .build();
     }
 
     private pb.order_item.OrderItem.OrderItemResponse mapResponse(com.sanedge.order_item.domain.response.OrderItemResponse res) {

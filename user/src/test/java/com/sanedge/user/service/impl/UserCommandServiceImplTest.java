@@ -21,6 +21,8 @@ import com.sanedge.common.exception.InvalidRequestException;
 import com.sanedge.common.exception.ResourceAlreadyExistsException;
 import com.sanedge.common.exception.ResourceNotFoundException;
 import com.sanedge.common.observability.TracingMetrics;
+import com.sanedge.common.adapter.model.Role;
+import com.sanedge.common.adapter.role.RoleQueryPort;
 import com.sanedge.common.utils.PasswordUtil;
 import com.sanedge.user.domain.requests.RegisterRequest;
 import com.sanedge.user.domain.requests.UpdateUserRequest;
@@ -48,7 +50,7 @@ class UserCommandServiceImplTest {
     private TracingMetrics tracingMetrics;
 
     @Mock
-    private pb.role.RoleService roleQueryService;
+    private RoleQueryPort roleQueryPort;
 
     private UserCommandServiceImpl userCommandService;
 
@@ -58,17 +60,8 @@ class UserCommandServiceImplTest {
                 userRepository,
                 passwordUtil,
                 redisService,
-                tracingMetrics);
-
-        // Inject @GrpcClient fields via reflection
-        try {
-            java.lang.reflect.Field roleQueryField = UserCommandServiceImpl.class
-                    .getDeclaredField("roleQueryService");
-            roleQueryField.setAccessible(true);
-            roleQueryField.set(userCommandService, roleQueryService);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to inject role gRPC mocks", e);
-        }
+                tracingMetrics,
+                roleQueryPort);
 
         lenient().doAnswer(invocation -> {
             Supplier<Uni<?>> supplier = invocation.getArgument(3);
@@ -150,19 +143,8 @@ class UserCommandServiceImplTest {
         request.setFirstname("John");
         request.setLastname("Doe");
 
-        pb.role.RoleQuery.FindByNameRoleRequest requestProto = pb.role.RoleQuery.FindByNameRoleRequest.newBuilder()
-                .setName("ROLE_ADMIN")
-                .build();
-        pb.role.Role.ApiResponseRole responseProto = pb.role.Role.ApiResponseRole.newBuilder()
-                .setStatus("success")
-                .setMessage("Role found")
-                .setData(pb.role.Role.RoleResponse.newBuilder()
-                        .setId(1)
-                        .setName("ROLE_ADMIN")
-                        .build())
-                .build();
-
-        when(roleQueryService.findByNameRole(requestProto)).thenReturn(Uni.createFrom().item(responseProto));
+        when(roleQueryPort.findByName("ROLE_ADMIN")).thenReturn(
+                Uni.createFrom().item(new Role(1, "ROLE_ADMIN", null, null)));
 
         when(userRepository.persist(any(User.class))).thenAnswer(invocation -> {
             User userToPersist = invocation.getArgument(0);

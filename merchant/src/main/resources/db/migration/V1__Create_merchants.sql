@@ -1,6 +1,8 @@
-CREATE TABLE IF NOT EXISTS "pos_merchant"."merchants" (
-    "merchant_id" BIGINT NOT NULL DEFAULT nextval('pos_merchant.merchants_seq') PRIMARY KEY,
-    "user_id" BIGINT NOT NULL REFERENCES "pos_identity"."users" ("id") ON DELETE CASCADE,
+CREATE SEQUENCE IF NOT EXISTS "merchants_seq";
+
+CREATE TABLE IF NOT EXISTS "merchants" (
+    "merchant_id" BIGINT NOT NULL DEFAULT nextval('merchants_seq') PRIMARY KEY,
+    "user_id" BIGINT NOT NULL,
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
     "address" TEXT,
@@ -13,6 +15,6 @@ CREATE TABLE IF NOT EXISTS "pos_merchant"."merchants" (
 );
 
 
-CREATE INDEX IF NOT EXISTS "idx_merchants_user_id" ON "pos_merchant"."merchants" ("user_id");
-CREATE INDEX IF NOT EXISTS "idx_merchants_status" ON "pos_merchant"."merchants" ("status");
-CREATE INDEX IF NOT EXISTS "idx_merchants_name" ON "pos_merchant"."merchants" ("name");
+CREATE INDEX IF NOT EXISTS "idx_merchants_user_id" ON "merchants" ("user_id");
+CREATE INDEX IF NOT EXISTS "idx_merchants_status" ON "merchants" ("status");
+CREATE INDEX IF NOT EXISTS "idx_merchants_name" ON "merchants" ("name");

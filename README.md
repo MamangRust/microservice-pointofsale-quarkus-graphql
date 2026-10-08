@@ -2,7 +2,7 @@
 
 A production-grade, highly resilient, and fully observable **microservices point of sale (POS) backend** built in **Java 21** using **Quarkus** reactive framework (v3.31.3). Designed around domain-driven service boundaries following Clean Architecture and CQRS principles, each service runs as an **independent JVM process** with its own gRPC server, database connection pool, caching layer, and Flyway migrations.
 
-Each retail and identity business domain — Users, Roles, Cashiers, Merchants, Categories, Products, Orders, Order Items, Transactions — lives in its own self-contained Maven module as a separate microservice. These services communicate synchronously via high-performance **gRPC** protocols and asynchronously using **Apache Kafka** event propagation, exposing a unified reactive entry point through a **GraphQL API Gateway** powered by Quarkus SmallRye GraphQL. A dedicated **ClickHouse analytics layer** (stats-reader, stats-writer, stats-backfill) provides real-time business intelligence.
+Each retail and identity business domain — Users, Roles, Cashiers, Merchants, Categories, Products, Orders, Order Items, Transactions — lives in its own self-contained Maven module as a separate microservice. These services communicate synchronously via high-performance **gRPC** protocols and asynchronously using **Apache Kafka** event propagation, exposing a unified reactive entry point through a **REST API Gateway** powered by Quarkus RESTEasy Reactive. A dedicated **ClickHouse analytics layer** (stats-reader, stats-writer, stats-backfill) provides real-time business intelligence.
 
 The platform is fortified with a **comprehensive observability suite** (Prometheus, Grafana, Loki, Jaeger, OpenTelemetry), **ClickHouse analytics**, **Redis caching** with custom telemetry for each service, and Kubernetes configurations ready for production auto-scaling.
 
@@ -12,7 +12,7 @@ The platform is fortified with a **comprehensive observability suite** (Promethe
 
 | Domain             | Capabilities                                                                                                                                                                                              |
 | :----------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Auth & Users**   | Secure registration, multi-factor login, stateless JWT access/refresh token lifecycle, password reset workflows, OTP email verification, and `/me` profile GraphQL query.                                 |
+| **Auth & Users**   | Secure registration, multi-factor login, stateless JWT access/refresh token lifecycle, password reset workflows, OTP email verification, and `/me` profile REST endpoint.                                 |
 | **Roles & RBAC**   | Custom permission configuration, granular access control matrices, and sub-second permission evaluation cached via Redis.                                                                                 |
 | **Merchants**      | Fully featured merchant onboarding, profile details management, business data registration, and merchant performance/transaction reports with full data restoration capabilities (soft delete & restore). |
 | **Cashiers**       | Staff management per merchant, cashier activity tracking, sales performance analysis, and daily/monthly sales volume reporting.                                                                           |
@@ -30,7 +30,7 @@ The platform is fortified with a **comprehensive observability suite** (Promethe
 
 ## Architecture Overview
 
-The platform implements a **Distributed Microservices** architecture. Each business service is a logical, decoupled, self-contained microservice inside its own Maven submodule, possessing its own independent gRPC boundary. A **Quarkus GraphQL API Gateway** acts as the unified edge router, exposing a single GraphQL schema (queries & mutations) and transforming client GraphQL operations into fast gRPC downstream communications via Quarkus gRPC clients.
+The platform implements a **Distributed Microservices** architecture. Each business service is a logical, decoupled, self-contained microservice inside its own Maven submodule, possessing its own independent gRPC boundary. A **Quarkus REST API Gateway** acts as the unified edge router, transforming client HTTP REST requests into fast gRPC downstream communications via Quarkus gRPC clients.
 
 ### Core Architecture Principles
 
@@ -39,7 +39,7 @@ The platform implements a **Distributed Microservices** architecture. Each busin
 - **Reactive execution**: Powered entirely by Quarkus reactive engine and Mutiny, enabling high throughput with minimal resource footprints.
 - **Direct DB Connections**: Each service manages its own Agroal connection pool directly to PostgreSQL — no PgBouncer dependency.
 - **Event-Driven Resilience**: Apache Kafka decouples transaction events, ensuring side effects like email billing remain completely non-blocking. Transactional outbox pattern ensures no event loss.
-- **OTel Telemetry Integration**: Standardized OpenTelemetry middleware injects trace IDs across gRPC boundaries, allowing seamless trace propagation from the client GraphQL gateway down to postgres operations.
+- **OTel Telemetry Integration**: Standardized OpenTelemetry middleware injects trace IDs across gRPC boundaries, allowing seamless trace propagation from the client REST gateway down to postgres operations.
 - **ClickHouse Analytics**: Dedicated analytics pipeline (stats-reader, stats-writer, stats-backfill) for real-time business intelligence without impacting transactional database performance.
 
 ```mermaid
@@ -53,13 +53,13 @@ graph TB
 
     Client["Client Applications<br/>(Web / Mobile / API)"]:::client
 
-    subgraph APIGateway["API Gateway — NGINX + Quarkus GraphQL Gateway"]
+    subgraph APIGateway["API Gateway — NGINX + Quarkus REST Gateway"]
         direction LR
-        GQL["GraphQL API Handler<br/>Port :5000"]:::gateway
+        REST["REST API Route Handler<br/>Port :5000"]:::gateway
         AuthMW["JWT Auth & Role<br/>Middleware"]:::gateway
     end
 
-    Client -->|"GraphQL over HTTP"| APIGateway
+    Client -->|HTTP REST| APIGateway
 
     subgraph BusinessServices["Business Domain Services (Java Quarkus)"]
         direction TB
@@ -87,16 +87,16 @@ graph TB
         end
     end
 
-    GQL -->|"Quarkus gRPC Client"| AUTH
-    GQL -->|"Quarkus gRPC Client"| USER
-    GQL -->|"Quarkus gRPC Client"| ROLE
-    GQL -->|"Quarkus gRPC Client"| MERCH
-    GQL -->|"Quarkus gRPC Client"| CASHIER
-    GQL -->|"Quarkus gRPC Client"| CATEGORY
-    GQL -->|"Quarkus gRPC Client"| PRODUCT
-    GQL -->|"Quarkus gRPC Client"| ORDER
-    GQL -->|"Quarkus gRPC Client"| ORDER_ITEM
-    GQL -->|"Quarkus gRPC Client"| TXN
+    REST -->|"Quarkus gRPC Client"| AUTH
+    REST -->|"Quarkus gRPC Client"| USER
+    REST -->|"Quarkus gRPC Client"| ROLE
+    REST -->|"Quarkus gRPC Client"| MERCH
+    REST -->|"Quarkus gRPC Client"| CASHIER
+    REST -->|"Quarkus gRPC Client"| CATEGORY
+    REST -->|"Quarkus gRPC Client"| PRODUCT
+    REST -->|"Quarkus gRPC Client"| ORDER
+    REST -->|"Quarkus gRPC Client"| ORDER_ITEM
+    REST -->|"Quarkus gRPC Client"| TXN
 
     subgraph Infrastructure["Infrastructure Layer"]
         direction LR
@@ -122,7 +122,7 @@ graph TB
     ROLE -->|"Quarkus Redis client"| REDIS
     CASHIER -->|"Quarkus Redis client"| REDIS
     PRODUCT -->|"Quarkus Redis client"| REDIS
-    GQL -->|"Quarkus Redis client"| REDIS
+    REST -->|"Quarkus Redis client"| REDIS
 
     subgraph EventConsumers["Event-Driven Consumers"]
         EMAIL["Email Service<br/>SMTP Notification Worker"]:::event
@@ -171,7 +171,7 @@ graph TB
     PRODUCT -.->|"/metrics"| PROM
     ORDER -.->|"/metrics"| PROM
     TXN -.->|"/metrics"| PROM
-    GQL -.->|"/metrics"| PROM
+    REST -.->|"/metrics"| PROM
 
     AUTH -.->|"OTLP Spans"| OTEL
     USER -.->|"OTLP Spans"| OTEL
@@ -182,7 +182,7 @@ graph TB
     PRODUCT -.->|"OTLP Spans"| OTEL
     ORDER -.->|"OTLP Spans"| OTEL
     TXN -.->|"OTLP Spans"| OTEL
-    GQL -.->|"OTLP Spans"| OTEL
+    REST -.->|"OTLP Spans"| OTEL
 
     OTEL -.-> JAEGER
     PROMTAIL -.-> LOKI
@@ -210,7 +210,7 @@ graph LR
     classDef analytics fill:#052e16,stroke:#4ade80,color:#dcfce7,stroke-width:1px,rx:8
 
     subgraph Gateway
-        API["API Gateway<br/>Quarkus GraphQL Router :5000"]:::gw
+        API["API Gateway<br/>Quarkus REST Router :5000"]:::gw
     end
 
     subgraph Identity["Identity & Access (3)"]
@@ -313,20 +313,20 @@ graph TB
 
 ## Data & Event Flow
 
-### Synchronous Flow (GraphQL Proxy & Cache Read-Through)
+### Synchronous Flow (REST Proxy & Cache Read-Through)
 
-All external client API requests go through the GraphQL schema exposed by the Quarkus API Gateway. The API Gateway validates the JWT/API Key, resolves the requested query/mutation against the correct downstream gRPC microservice, checks the Redis cache, and fetches PostgreSQL directly if a cache miss occurs.
+All external client API requests go through the REST endpoints defined in the Quarkus API Gateway Router. The API Gateway validates the JWT/API Key, connects with the correct downstream gRPC microservice server, checks the Redis cache, and fetches PostgreSQL directly if a cache miss occurs.
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as Client
-    participant GW as API Gateway<br/>(Quarkus GraphQL Router)
+    participant GW as API Gateway<br/>(Quarkus REST Router)
     participant SVC as Domain Service<br/>(gRPC Server)
     participant REDIS as Redis Cache
     participant DB as PostgreSQL
 
-    C->>GW: GraphQL Query / Mutation (JSON over HTTP POST)
+    C->>GW: HTTP REST Request (GET/POST/PUT)
     GW->>GW: JWT Authentication Check
     GW->>SVC: gRPC Call (Protobuf payload)
     SVC->>REDIS: Check Cache (Redis)
@@ -338,7 +338,7 @@ sequenceDiagram
         SVC->>REDIS: Populate Cache for next read
     end
     SVC-->>GW: gRPC Response payload
-    GW-->>C: GraphQL JSON Response
+    GW-->>C: HTTP REST Response (JSON format)
 ```
 
 ### Asynchronous Flow (Kafka Notification Event pipeline)
@@ -376,7 +376,7 @@ Keputusan desain yang disengaja (bukan bug) — didokumentasikan agar tim tidak
 **Catatan Fase 11–15 (2026-08-14):** lihat `SUPER_PLANNING_MASTER.md` untuk
 checklist lengkap — transactional outbox + retry/DLQ (F11), idempotency key
 transaksi (F12), chaos & tracing Kafka (F13), SASL/TLS + acks=all + idempotent
-producer (F14), serta order stats by-id & OTP GraphQL (F15).
+producer (F14), serta order stats by-id & OTP REST (F15).
 
 ---
 
@@ -598,7 +598,7 @@ flowchart TB
 
         subgraph Gateway["API Gateway"]
             NGINX["NGINX Proxy :80"]:::gateway
-            APIGW["API Gateway Container<br/>Quarkus GraphQL Gateway :5000"]:::gateway
+            APIGW["API Gateway Container<br/>Quarkus REST Gateway :5000"]:::gateway
         end
 
         subgraph Services["Core Service Containers"]
@@ -752,7 +752,7 @@ flowchart TB
             NGINX_POD["nginx-pods"]:::pod
         end
 
-        subgraph GatewayServices["GraphQL API Gateway (Scalable Deployment)"]
+        subgraph GatewayServices["REST API Gateway (Scalable Deployment)"]
             APIGW_SVC["apigateway-service<br/>(ClusterIP :5000)"]:::k8sSvc
             APIGW_PODS["apigateway-pods"]:::pod
             APIGW_HPA["apigateway-hpa"]:::hpa
@@ -1042,7 +1042,7 @@ The directory layout under [deployments/gitops/argocd/](file:///home/hoover/Proj
 | Category              | Selected Technologies        | Purpose                                                          |
 | :-------------------- | :--------------------------- | :--------------------------------------------------------------- |
 | **Language**          | Java 21 (Quarkus v3.31.3)    | Reactive, non-blocking asynchronous Java execution.              |
-| **API Edge Gateway**  | Quarkus SmallRye GraphQL    | Reactive GraphQL API Gateway router and reverse proxy destination.  |
+| **API Edge Gateway**  | Quarkus RESTEasy Reactive    | Reactive REST API Gateway router and reverse proxy destination.  |
 | **RPC Inter-service** | Quarkus gRPC Client & Server | Blazing fast, contract-first synchronous gRPC communication.     |
 | **Database**          | PostgreSQL v17               | Safe ACID ledger persistent storage system (direct per-service connections). |
 | **Analytics DB**      | ClickHouse                  | Columnar analytics database for real-time business intelligence. |
@@ -1125,7 +1125,7 @@ done
 | Application/Service             | Port Configuration / URL                                                        |
 | :------------------------------ | :------------------------------------------------------------------------------ |
 | **NGINX Reverse Proxy Edge**    | [http://localhost](http://localhost)                                            |
-| **API Gateway GraphQL**         | [http://localhost:5000/graphql](http://localhost:5000/graphql)                  |
+| **API Gateway Direct REST Hub** | [http://localhost:5000](http://localhost:5000)                                  |
 | **Auth Service (gRPC)**         | `localhost:9000`                                                                |
 | **User Service (gRPC)**         | `localhost:9011`                                                                |
 | **Role Service (gRPC)**         | `localhost:9012`                                                                |
@@ -1195,7 +1195,7 @@ quarkus-point-of-sale/
 │       ├── observability/          #   TracingMetrics config
 │       ├── service/                #   RedisService utilities
 │       └── pb/                     #   Compiled Java Protobuf gRPC stubs
-├── gateway/                        # GraphQL API Gateway (GraphQL → gRPC proxy, port :5000)
+├── gateway/                        # REST API Gateway (REST Router proxying to gRPC)
 ├── auth/                           # Authentication engine service
 ├── user/                           # User profiles service (CQRS)
 ├── role/                           # RBAC authorization service

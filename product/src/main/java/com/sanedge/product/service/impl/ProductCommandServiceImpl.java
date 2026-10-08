@@ -20,8 +20,9 @@ import com.sanedge.product.repository.ProductCommandRepository;
 import com.sanedge.product.repository.ProductQueryRepository;
 import com.sanedge.product.service.ProductCommandService;
 
+import com.sanedge.common.adapter.category.CategoryQueryPort;
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -40,21 +41,24 @@ public class ProductCommandServiceImpl implements ProductCommandService {
     private final RedisService redisService;
     private final TracingMetrics tracingMetrics;
 
-    @Inject
-    @GrpcClient("merchant")
-    pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub merchantQueryService;
+    private final MerchantQueryPort merchantQueryPort;
+    private final CategoryQueryPort categoryQueryPort;
 
     @Inject
     public ProductCommandServiceImpl(ProductCommandRepository productCommandRepository,
             ProductQueryRepository productQueryRepository,
             Validator validator,
             RedisService redisService,
-            TracingMetrics tracingMetrics) {
+            TracingMetrics tracingMetrics,
+            MerchantQueryPort merchantQueryPort,
+            CategoryQueryPort categoryQueryPort) {
         this.productCommandRepository = productCommandRepository;
         this.productQueryRepository = productQueryRepository;
         this.validator = validator;
         this.redisService = redisService;
         this.tracingMetrics = tracingMetrics;
+        this.merchantQueryPort = merchantQueryPort;
+        this.categoryQueryPort = categoryQueryPort;
     }
 
     private <T> void validateRequest(T req) {
@@ -100,7 +104,8 @@ public class ProductCommandServiceImpl implements ProductCommandService {
                     product.setCreatedAt(Timestamp.valueOf(LocalDateTime.now()));
                     product.setUpdatedAt(Timestamp.valueOf(LocalDateTime.now()));
 
-                    return productCommandRepository.persist(product)
+                    return categoryQueryPort.findByCategoryId(req.getCategoryId().intValue())
+                            .chain(category -> productCommandRepository.persist(product))
                             .map(saved -> {
                                 logger.info("Product created successfully with name={}", saved.getName());
                                 return ApiResponse.success("Product created successfully", ProductResponse.from(saved));
@@ -130,40 +135,31 @@ public class ProductCommandServiceImpl implements ProductCommandService {
                                 .item(new ApiResponse<>("error", e.getMessage(), (ProductResponse) null));
                     }
 
-                    return merchantQueryService
-                            .findByIdMerchant(pb.merchant.Merchant.FindByIdMerchantRequest.newBuilder()
-                                    .setMerchantId(req.getMerchantId())
-                                    .build())
-                            .onItem().transformToUni(apiResp -> {
-                                if (apiResp == null || !apiResp.hasData()
-                                        || !"success".equalsIgnoreCase(apiResp.getStatus())) {
-                                    return Uni.createFrom().failure(new ResourceNotFoundException(
-                                            "Merchant not found with id " + req.getMerchantId()));
-                                }
-                                return productQueryRepository.findProductById(req.getProductId().longValue());
-                            })
+                    return merchantQueryPort.findByMerchantId(req.getMerchantId())
+                            .chain(merchant -> productQueryRepository.findProductById(req.getProductId().longValue()))
                             .onItem().ifNull()
                             .failWith(() -> new ResourceNotFoundException(
                                     "Product not found with id " + req.getProductId()))
-                            .chain(product -> {
-                                if (req.getImageProduct() != null) {
-                                    product.setImageProduct(req.getImageProduct());
-                                }
+                            .chain(product -> categoryQueryPort.findByCategoryId(req.getCategoryId().intValue())
+                                    .chain(category -> {
+                                        if (req.getImageProduct() != null) {
+                                            product.setImageProduct(req.getImageProduct());
+                                        }
 
-                                product.setMerchantId(req.getMerchantId().longValue());
-                                product.setCategoryId(req.getCategoryId().longValue());
+                                        product.setMerchantId(req.getMerchantId().longValue());
+                                        product.setCategoryId(req.getCategoryId().longValue());
 
-                                product.setName(req.getName());
-                                product.setDescription(req.getDescription());
-                                product.setPrice(req.getPrice());
-                                product.setCountInStock(req.getCountInStock());
-                                product.setBrand(req.getBrand());
-                                product.setWeight(req.getWeight());
-                                product.setSlugProduct(req.getSlugProduct());
-                                product.setUpdatedAt(Timestamp.valueOf(LocalDateTime.now()));
+                                        product.setName(req.getName());
+                                        product.setDescription(req.getDescription());
+                                        product.setPrice(req.getPrice());
+                                        product.setCountInStock(req.getCountInStock());
+                                        product.setBrand(req.getBrand());
+                                        product.setWeight(req.getWeight());
+                                        product.setSlugProduct(req.getSlugProduct());
+                                        product.setUpdatedAt(Timestamp.valueOf(LocalDateTime.now()));
 
-                                return productCommandRepository.persist(product);
-                            })
+                                        return productCommandRepository.persist(product);
+                                    }))
                             .chain(updated -> {
                                 String cacheKey = "products:id:" + req.getProductId();
                                 return redisService.deleteReactive(cacheKey)

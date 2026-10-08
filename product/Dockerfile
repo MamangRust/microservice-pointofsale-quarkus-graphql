@@ -10,5 +10,5 @@ RUN --mount=type=cache,target=/root/.m2 mvn clean package -pl product -am -Dskip
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/product/target/quarkus-app/ ./
-EXPOSE 8086
+EXPOSE 8088 9003
 ENTRYPOINT ["java", "-jar", "quarkus-run.jar"]

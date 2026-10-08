@@ -21,8 +21,8 @@ import com.sanedge.merchant.repository.MerchantCommandRepository;
 import com.sanedge.merchant.repository.MerchantQueryRepository;
 import com.sanedge.merchant.service.MerchantCommandService;
 
+import com.sanedge.common.adapter.user.UserQueryPort;
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -32,24 +32,24 @@ import jakarta.inject.Inject;
 public class MerchantCommandServiceImpl implements MerchantCommandService {
         private static final Logger logger = LoggerFactory.getLogger(MerchantCommandServiceImpl.class);
 
-        @GrpcClient("user")
-        pb.user.MutinyUserQueryServiceGrpc.MutinyUserQueryServiceStub userQueryService;
-
         private final MerchantQueryRepository merchantQueryRepository;
         private final MerchantCommandRepository merchantCommandRepository;
         private final RedisService redisService;
         private final TracingMetrics tracingMetrics;
+        private final UserQueryPort userQueryPort;
 
         @Inject
         public MerchantCommandServiceImpl(
                         MerchantQueryRepository merchantQueryRepository,
                         MerchantCommandRepository merchantCommandRepository,
                         RedisService redisService,
-                        TracingMetrics tracingMetrics) {
+                        TracingMetrics tracingMetrics,
+                        UserQueryPort userQueryPort) {
                 this.merchantQueryRepository = merchantQueryRepository;
                 this.merchantCommandRepository = merchantCommandRepository;
                 this.redisService = redisService;
                 this.tracingMetrics = tracingMetrics;
+                this.userQueryPort = userQueryPort;
         }
 
         @Override
@@ -62,17 +62,8 @@ public class MerchantCommandServiceImpl implements MerchantCommandService {
                                 .build();
 
                 return runTraced("createMerchant", "create_merchant", attrs,
-                                () -> userQueryService
-                                                .findById(pb.user.User.FindByIdUserRequest.newBuilder()
-                                                                .setId(req.getUserId().intValue()).build())
-                                                .chain(response -> {
-                                                        if (response == null || !response.hasData()) {
-                                                                logger.error("User not found with id {}",
-                                                                                req.getUserId());
-                                                                throw new ResourceNotFoundException("User not found");
-                                                        }
-                                                        return merchantQueryRepository.existsByName(req.getName());
-                                                })
+                                () -> userQueryPort.findById(req.getUserId().intValue())
+                                                .chain(user -> merchantQueryRepository.existsByName(req.getName()))
                                                 .chain(nameExists -> {
                                                         if (nameExists) {
                                                                 logger.error("Merchant name already taken | Name: {}",
@@ -131,20 +122,9 @@ public class MerchantCommandServiceImpl implements MerchantCommandService {
 
                                                         Uni<Void> userCheckUni = Uni.createFrom().nullItem();
                                                         if (req.getUserId() != null) {
-                                                                userCheckUni = userQueryService.findById(
-                                                                                pb.user.User.FindByIdUserRequest
-                                                                                                .newBuilder()
-                                                                                                .setId(req.getUserId()
-                                                                                                                .intValue())
-                                                                                                .build())
-                                                                                .chain(response -> {
-                                                                                        if (response == null
-                                                                                                        || !response.hasData()) {
-                                                                                                logger.error("User not found with id {}",
-                                                                                                                req.getUserId());
-                                                                                                throw new ResourceNotFoundException(
-                                                                                                                "User not found");
-                                                                                        }
+                                                                userCheckUni = userQueryPort
+                                                                                .findById(req.getUserId().intValue())
+                                                                                .chain(user -> {
                                                                                         merchant.setUserId(req
                                                                                                         .getUserId()
                                                                                                         .intValue());

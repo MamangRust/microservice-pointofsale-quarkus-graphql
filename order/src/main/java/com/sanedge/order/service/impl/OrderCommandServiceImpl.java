@@ -12,6 +12,15 @@ import com.sanedge.common.config.RedisService;
 import com.sanedge.common.domain.response.ApiResponse;
 import com.sanedge.common.exception.ResourceNotFoundException;
 import com.sanedge.common.observability.TracingMetrics;
+import com.sanedge.common.adapter.cashier.CashierQueryPort;
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.model.CreateOrderItemCmd;
+import com.sanedge.common.adapter.model.Product;
+import com.sanedge.common.adapter.model.UpdateOrderItemCmd;
+import com.sanedge.common.adapter.model.UpdateProductCmd;
+import com.sanedge.common.adapter.order_item.OrderItemCommandPort;
+import com.sanedge.common.adapter.product.ProductCommandPort;
+import com.sanedge.common.adapter.product.ProductQueryPort;
 import com.sanedge.order.domain.requests.CreateOrderRequest;
 import com.sanedge.order.domain.requests.UpdateOrderRequest;
 import com.sanedge.order.domain.response.OrderResponse;
@@ -23,7 +32,6 @@ import com.sanedge.order.repository.OrderQueryRepository;
 import com.sanedge.order.service.OrderCommandService;
 
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
@@ -44,20 +52,11 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     private final RedisService redisService;
     private final TracingMetrics tracingMetrics;
 
-    @GrpcClient("merchant")
-    pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub merchantQueryService;
-
-    @GrpcClient("cashier")
-    pb.cashier.MutinyCashierServiceGrpc.MutinyCashierServiceStub cashierQueryService;
-
-    @GrpcClient("product")
-    pb.product.MutinyProductServiceGrpc.MutinyProductServiceStub productQueryService;
-
-    @GrpcClient("product")
-    pb.product.MutinyProductCommandServiceGrpc.MutinyProductCommandServiceStub productCommandService;
-
-    @GrpcClient("order_item")
-    pb.order_item.MutinyOrderItemCommandServiceGrpc.MutinyOrderItemCommandServiceStub orderItemCommandService;
+    private final MerchantQueryPort merchantQueryPort;
+    private final CashierQueryPort cashierQueryPort;
+    private final ProductQueryPort productQueryPort;
+    private final ProductCommandPort productCommandPort;
+    private final OrderItemCommandPort orderItemCommandPort;
 
     @Inject
     public OrderCommandServiceImpl(OrderQueryRepository orderQueryRepository,
@@ -65,13 +64,23 @@ public class OrderCommandServiceImpl implements OrderCommandService {
             com.sanedge.order.repository.OutboxRepository outboxRepository,
             Validator validator,
             RedisService redisService,
-            TracingMetrics tracingMetrics) {
+            TracingMetrics tracingMetrics,
+            MerchantQueryPort merchantQueryPort,
+            CashierQueryPort cashierQueryPort,
+            ProductQueryPort productQueryPort,
+            ProductCommandPort productCommandPort,
+            OrderItemCommandPort orderItemCommandPort) {
         this.orderQueryRepository = orderQueryRepository;
         this.orderCommandRepository = orderCommandRepository;
         this.outboxRepository = outboxRepository;
         this.validator = validator;
         this.redisService = redisService;
         this.tracingMetrics = tracingMetrics;
+        this.merchantQueryPort = merchantQueryPort;
+        this.cashierQueryPort = cashierQueryPort;
+        this.productQueryPort = productQueryPort;
+        this.productCommandPort = productCommandPort;
+        this.orderItemCommandPort = orderItemCommandPort;
     }
 
     private <T> void validateRequest(T req) {
@@ -104,51 +113,24 @@ public class OrderCommandServiceImpl implements OrderCommandService {
                         return Uni.createFrom().item(new ApiResponse<>("error", e.getMessage(), null));
                     }
 
-                    return merchantQueryService
-                            .findByIdMerchant(pb.merchant.Merchant.FindByIdMerchantRequest.newBuilder()
-                                    .setMerchantId(request.getMerchantId())
-                                    .build())
-                            .chain(merchantResponse -> {
-                                if (!"success".equals(merchantResponse.getStatus()) || !merchantResponse.hasData()) {
-                                    logger.error("Merchant not found with id={}", request.getMerchantId());
-                                    throw new ResourceNotFoundException("Merchant not found");
-                                }
-                                return cashierQueryService
-                                        .findById(pb.cashier.Cashier.FindByIdCashierRequest.newBuilder()
-                                                .setId(request.getCashierId())
-                                                .build());
-                            })
-                            .chain(cashierResponse -> {
-                                if (!"success".equals(cashierResponse.getStatus()) || !cashierResponse.hasData()) {
-                                    logger.error("Cashier not found with id={}", request.getCashierId());
-                                    throw new ResourceNotFoundException("Cashier not found");
-                                }
+                    return merchantQueryPort.findByMerchantId(request.getMerchantId())
+                            .chain(merchant -> cashierQueryPort.findById(request.getCashierId())
+                                    .chain(cashier -> {
+                                        Order order = new Order();
+                                        order.setMerchantId(request.getMerchantId().longValue());
+                                        order.setCashierId(request.getCashierId().longValue());
+                                        order.setCreatedAt(Timestamp.valueOf(LocalDateTime.now()));
+                                        order.setUpdatedAt(Timestamp.valueOf(LocalDateTime.now()));
+                                        order.setTotalPrice(0L);
 
-                                Order order = new Order();
-                                order.setMerchantId(request.getMerchantId().longValue());
-                                order.setCashierId(request.getCashierId().longValue());
-                                order.setCreatedAt(Timestamp.valueOf(LocalDateTime.now()));
-                                order.setUpdatedAt(Timestamp.valueOf(LocalDateTime.now()));
-                                order.setTotalPrice(0L);
-
-                                return orderCommandRepository.persist(order).map(v -> order);
-                            })
+                                        return orderCommandRepository.persist(order).map(v -> order);
+                                    }))
                             .chain(order -> Multi.createFrom().iterable(request.getItems())
                                     .onItem()
-                                    .transformToUniAndConcatenate(itemReq -> productQueryService
-                                            .findById(pb.product.Product.FindByIdProductRequest.newBuilder()
-                                                    .setId(itemReq.getProductId())
-                                                    .build())
-                                            .chain(productResponse -> {
-                                                if (!"success".equals(productResponse.getStatus())
-                                                        || !productResponse.hasData()) {
-                                                    logger.error("Product not found with id={}",
-                                                            itemReq.getProductId());
-                                                    throw new ResourceNotFoundException(
-                                                            "Product not found with id=" + itemReq.getProductId());
-                                                }
-                                                pb.product.Product.ProductResponse product = productResponse.getData();
-                                                if (product.getCountInStock() < itemReq.getQuantity()) {
+                                    .transformToUniAndConcatenate(itemReq -> productQueryPort
+                                            .findById(itemReq.getProductId())
+                                            .chain(product -> {
+                                                if (product.countInStock() < itemReq.getQuantity()) {
                                                     logger.error("Insufficient stock for product id={}",
                                                             itemReq.getProductId());
                                                     throw new IllegalArgumentException(
@@ -158,34 +140,25 @@ public class OrderCommandServiceImpl implements OrderCommandService {
 
                                                 // Price is optional in the request — fall back to the product's price.
                                                 Integer unitPrice = itemReq.getPrice() != null ? itemReq.getPrice()
-                                                                : product.getPrice();
-
-                                                pb.order_item.OrderItemCommand.CreateOrderItemRequest orderItemReq = pb.order_item.OrderItemCommand.CreateOrderItemRequest
-                                                        .newBuilder()
-                                                        .setOrderId(order.getOrderId().intValue())
-                                                        .setProductId(itemReq.getProductId())
-                                                        .setQuantity(itemReq.getQuantity())
-                                                        .setPrice(unitPrice)
-                                                        .build();
-
-                                                pb.product.ProductCommand.UpdateProductRequest productReq = pb.product.ProductCommand.UpdateProductRequest
-                                                        .newBuilder()
-                                                        .setProductId(product.getId())
-                                                        .setMerchantId(product.getMerchantId())
-                                                        .setCategoryId(product.getCategoryId())
-                                                        .setName(product.getName())
-                                                        .setDescription(product.getDescription())
-                                                        .setPrice(product.getPrice())
-                                                        .setCountInStock(
-                                                                product.getCountInStock() - itemReq.getQuantity())
-                                                        .setBrand(product.getBrand())
-                                                        .setWeight(product.getWeight())
-                                                        .setImageProduct(product.getImageProduct())
-                                                        .build();
+                                                                : product.price();
 
                                                 return Uni.combine().all().unis(
-                                                        orderItemCommandService.createOrderItem(orderItemReq),
-                                                        productCommandService.update(productReq)).asTuple()
+                                                        orderItemCommandPort.createOrderItem(new CreateOrderItemCmd(
+                                                                order.getOrderId().intValue(),
+                                                                itemReq.getProductId(),
+                                                                itemReq.getQuantity(),
+                                                                unitPrice)),
+                                                        productCommandPort.update(new UpdateProductCmd(
+                                                                product.id(),
+                                                                product.merchantId(),
+                                                                product.categoryId(),
+                                                                product.name(),
+                                                                product.description(),
+                                                                product.price(),
+                                                                product.countInStock() - itemReq.getQuantity(),
+                                                                product.brand(),
+                                                                product.weight(),
+                                                                product.imageProduct()))).asTuple()
                                                         .map(t -> itemReq.getQuantity().longValue()
                                                                 * unitPrice.longValue());
                                             }))
@@ -239,59 +212,30 @@ public class OrderCommandServiceImpl implements OrderCommandService {
                                     throw new ResourceNotFoundException("Order not found");
                                 }
 
-                                return cashierQueryService
-                                        .findById(pb.cashier.Cashier.FindByIdCashierRequest.newBuilder()
-                                                .setId(request.getCashierId())
-                                                .build())
-                                        .chain(cashierResponse -> {
-                                            if (!"success".equals(cashierResponse.getStatus())
-                                                    || !cashierResponse.hasData()) {
-                                                logger.error("Cashier not found with id={}", request.getCashierId());
-                                                throw new ResourceNotFoundException("Cashier not found");
-                                            }
-                                            return Uni.createFrom().item(order);
-                                        });
+                                return cashierQueryPort.findById(request.getCashierId())
+                                        .map(cashier -> order);
                             })
                             .chain(order -> Multi.createFrom().iterable(request.getItems())
                                     .onItem()
-                                    .transformToUniAndConcatenate(itemReq -> productQueryService
-                                            .findById(pb.product.Product.FindByIdProductRequest.newBuilder()
-                                                    .setId(itemReq.getProductId())
-                                                    .build())
-                                            .chain(productResponse -> {
-                                                if (!"success".equals(productResponse.getStatus())
-                                                        || !productResponse.hasData()) {
-                                                    logger.error("Product not found with id={}",
-                                                            itemReq.getProductId());
-                                                    throw new ResourceNotFoundException(
-                                                            "Product not found with id=" + itemReq.getProductId());
-                                                }
-                                                pb.product.Product.ProductResponse product = productResponse.getData();
-
+                                    .transformToUniAndConcatenate(itemReq -> productQueryPort
+                                            .findById(itemReq.getProductId())
+                                            .chain(product -> {
                                                 // Price is optional in the request — fall back to the product's price.
                                                 Integer unitPrice = itemReq.getPrice() != null ? itemReq.getPrice()
-                                                                : product.getPrice();
+                                                                : product.price();
 
                                                 if (itemReq.getOrderItemId() != null && itemReq.getOrderItemId() > 0) {
-                                                    return orderItemCommandService.updateOrderItem(
-                                                            pb.order_item.OrderItemCommand.UpdateOrderItemRequest
-                                                                    .newBuilder()
-                                                                    .setOrderItemId(itemReq.getOrderItemId())
-                                                                    .setOrderId(order.getOrderId().intValue())
-                                                                    .setProductId(itemReq.getProductId())
-                                                                    .setQuantity(itemReq.getQuantity())
-                                                                    .setPrice(unitPrice)
-                                                                    .build())
-                                                            .map(resp -> {
-                                                                if (!"success".equals(resp.getStatus())) {
-                                                                    throw new ResourceNotFoundException(
-                                                                            "Order item not found");
-                                                                }
-                                                                return itemReq.getQuantity().longValue()
-                                                                        * unitPrice.longValue();
-                                                            });
+                                                    return orderItemCommandPort
+                                                            .updateOrderItem(new UpdateOrderItemCmd(
+                                                                    itemReq.getOrderItemId(),
+                                                                    order.getOrderId().intValue(),
+                                                                    itemReq.getProductId(),
+                                                                    itemReq.getQuantity(),
+                                                                    unitPrice))
+                                                            .map(oi -> itemReq.getQuantity().longValue()
+                                                                    * unitPrice.longValue());
                                                 } else {
-                                                    if (product.getCountInStock() < itemReq.getQuantity()) {
+                                                    if (product.countInStock() < itemReq.getQuantity()) {
                                                         logger.error("Insufficient stock for product id={}",
                                                                 itemReq.getProductId());
                                                         throw new IllegalArgumentException(
@@ -299,32 +243,23 @@ public class OrderCommandServiceImpl implements OrderCommandService {
                                                                         + itemReq.getProductId());
                                                     }
 
-                                                    pb.order_item.OrderItemCommand.CreateOrderItemRequest orderItemReq = pb.order_item.OrderItemCommand.CreateOrderItemRequest
-                                                            .newBuilder()
-                                                            .setOrderId(order.getOrderId().intValue())
-                                                            .setProductId(itemReq.getProductId())
-                                                            .setQuantity(itemReq.getQuantity())
-                                                            .setPrice(unitPrice)
-                                                            .build();
-
-                                                    pb.product.ProductCommand.UpdateProductRequest productReq = pb.product.ProductCommand.UpdateProductRequest
-                                                            .newBuilder()
-                                                            .setProductId(product.getId())
-                                                            .setMerchantId(product.getMerchantId())
-                                                            .setCategoryId(product.getCategoryId())
-                                                            .setName(product.getName())
-                                                            .setDescription(product.getDescription())
-                                                            .setPrice(product.getPrice())
-                                                            .setCountInStock(
-                                                                    product.getCountInStock() - itemReq.getQuantity())
-                                                            .setBrand(product.getBrand())
-                                                            .setWeight(product.getWeight())
-                                                            .setImageProduct(product.getImageProduct())
-                                                            .build();
-
                                                     return Uni.combine().all().unis(
-                                                            orderItemCommandService.createOrderItem(orderItemReq),
-                                                            productCommandService.update(productReq)).asTuple()
+                                                            orderItemCommandPort.createOrderItem(new CreateOrderItemCmd(
+                                                                    order.getOrderId().intValue(),
+                                                                    itemReq.getProductId(),
+                                                                    itemReq.getQuantity(),
+                                                                    unitPrice)),
+                                                            productCommandPort.update(new UpdateProductCmd(
+                                                                    product.id(),
+                                                                    product.merchantId(),
+                                                                    product.categoryId(),
+                                                                    product.name(),
+                                                                    product.description(),
+                                                                    product.price(),
+                                                                    product.countInStock() - itemReq.getQuantity(),
+                                                                    product.brand(),
+                                                                    product.weight(),
+                                                                    product.imageProduct()))).asTuple()
                                                             .map(t -> itemReq.getQuantity().longValue()
                                                                     * unitPrice.longValue());
                                                 }

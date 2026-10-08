@@ -21,7 +21,7 @@ import java.util.Set;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@Table(name = "users", schema = "pos_identity")
+@Table(name = "users")
 public class User extends BaseModel {
     @NotBlank
     @Size(max = 20)

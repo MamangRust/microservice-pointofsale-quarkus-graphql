@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "merchant_documents", schema = "pos_merchant")
+@Table(name = "merchant_documents")
 public class MerchantDocument extends BaseModel {
 
     @Id

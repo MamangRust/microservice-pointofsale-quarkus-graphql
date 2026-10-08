@@ -1,0 +1,18 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: alertmanager-config
+  namespace: point-of-sale
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: pos-secrets
+    kind: ClusterSecretStore
+  target:
+    name: alertmanager-config
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - secretKey: alertmanager.yml
+      remoteRef:
+        key: pos/ALERTMANAGER_CONFIG

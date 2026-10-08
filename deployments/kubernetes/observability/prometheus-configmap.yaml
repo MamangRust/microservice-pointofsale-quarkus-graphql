@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: point-of-sale
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 10s
+      evaluation_interval: 10s
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: ['alertmanager.point-of-sale.svc.cluster.local:9093']
+
+    rule_files:
+      - /etc/prometheus/rules/*.yaml
+
+    scrape_configs:
+      # Metrics aplikasi diekspor via OTLP ke otel-collector (satu-satunya
+      # sumber metrics service — konsisten dengan observability/prometheus.yml).
+      - job_name: 'java-app-via-otel'
+        static_configs:
+          - targets: ['otel-collector.point-of-sale.svc.cluster.local:8889']
+
+      - job_name: 'kafka-exporter'
+        static_configs:
+          - targets: ['kafka-exporter.point-of-sale.svc.cluster.local:9308']
+
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['node-exporter.point-of-sale.svc.cluster.local:9100']

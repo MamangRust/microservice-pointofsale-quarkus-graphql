@@ -6,7 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "refresh_tokens", schema = "pos_identity")
+@Table(name = "refresh_tokens")
 public class RefreshToken extends BaseModel {
     @Column(name = "user_id", nullable = false)
     private Long userId;

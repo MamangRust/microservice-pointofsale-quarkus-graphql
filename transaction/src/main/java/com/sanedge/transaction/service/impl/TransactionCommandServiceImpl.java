@@ -22,8 +22,10 @@ import com.sanedge.transaction.repository.TransactionCommandRepository;
 import com.sanedge.transaction.repository.TransactionQueryRepository;
 import com.sanedge.transaction.service.TransactionCommandService;
 
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.order.OrderQueryPort;
+import com.sanedge.common.adapter.order_item.OrderItemQueryPort;
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -44,29 +46,27 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
         @ConfigProperty(name = "notification.transaction.email", defaultValue = "admin@example.com")
         String notificationEmail;
 
-        @Inject
-        @GrpcClient("merchant")
-        pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub merchantQueryService;
-
-        @Inject
-        @GrpcClient("order")
-        pb.order.MutinyOrderQueryServiceGrpc.MutinyOrderQueryServiceStub orderQueryService;
-
-        @Inject
-        @GrpcClient("order_item")
-        pb.order_item.MutinyOrderItemServiceGrpc.MutinyOrderItemServiceStub orderItemQueryService;
+        private final MerchantQueryPort merchantQueryPort;
+        private final OrderQueryPort orderQueryPort;
+        private final OrderItemQueryPort orderItemQueryPort;
 
         @Inject
         public TransactionCommandServiceImpl(TransactionQueryRepository transactionQueryRepository,
                         TransactionCommandRepository transactionCommandRepository,
                         OutboxRepository outboxRepository,
                         RedisService redisService,
-                        TracingMetrics tracingMetrics) {
+                        TracingMetrics tracingMetrics,
+                        MerchantQueryPort merchantQueryPort,
+                        OrderQueryPort orderQueryPort,
+                        OrderItemQueryPort orderItemQueryPort) {
                 this.transactionQueryRepository = transactionQueryRepository;
                 this.transactionCommandRepository = transactionCommandRepository;
                 this.outboxRepository = outboxRepository;
                 this.redisService = redisService;
                 this.tracingMetrics = tracingMetrics;
+                this.merchantQueryPort = merchantQueryPort;
+                this.orderQueryPort = orderQueryPort;
+                this.orderItemQueryPort = orderItemQueryPort;
         }
 
         private Uni<Void> clearCache(Long transactionId, Long orderId) {
@@ -120,15 +120,10 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
         return runTraced("createTransaction", "create_transaction", attrs,
                         () -> {
 
-                                        return merchantQueryService
-                                                        .findByIdMerchant(pb.merchant.Merchant.FindByIdMerchantRequest
-                                                                        .newBuilder()
-                                                                        .setMerchantId(req.getMerchantID())
-                                                                        .build())
-                                                        .onItem().transformToUni(merchantResp -> {
-                                                                if (merchantResp == null || !merchantResp.hasData()
-                                                                                || !"success".equalsIgnoreCase(
-                                                                                                merchantResp.getStatus())) {
+                                        return merchantQueryPort.findByMerchantId(req.getMerchantID())
+                                                        .onFailure().recoverWithItem(err -> null)
+                                                        .onItem().transformToUni(merchant -> {
+                                                                if (merchant == null) {
                                                                         logger.error("Merchant not found | merchantId={}",
                                                                                         req.getMerchantID());
                                                                         return Uni.createFrom().item(new ApiResponse<>(
@@ -136,16 +131,10 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                         (TransactionResponse) null));
                                                                 }
 
-                                                                return orderQueryService.findById(
-                                                                                pb.order.Order.FindByIdOrderRequest
-                                                                                                .newBuilder()
-                                                                                                .setId(req.getOrderID())
-                                                                                                .build())
-                                                                                .onItem().transformToUni(orderResp -> {
-                                                                                        if (orderResp == null
-                                                                                                        || !orderResp.hasData()
-                                                                                                        || !"success".equalsIgnoreCase(
-                                                                                                                        orderResp.getStatus())) {
+                                                                return orderQueryPort.findById(req.getOrderID())
+                                                                                .onFailure().recoverWithItem(err -> null)
+                                                                                .onItem().transformToUni(order -> {
+                                                                                        if (order == null) {
                                                                                                 logger.error("Order not found | orderId={}",
                                                                                                                 req.getOrderID());
                                                                                                 return Uni.createFrom()
@@ -155,33 +144,25 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                                                                 (TransactionResponse) null));
                                                                                         }
 
-                                                                                        return orderItemQueryService
-                                                                                                        .findOrderItemByOrder(
-                                                                                                                        pb.order_item.OrderItem.FindByIdOrderItemRequest
-                                                                                                                                        .newBuilder()
-                                                                                                                                        .setOrderId(req
-                                                                                                                                                        .getOrderID())
-                                                                                                                                        .build())
+                                                                                        return orderItemQueryPort
+                                                                                                        .findOrderItemByOrder(req.getOrderID())
                                                                                                         .onItem()
                                                                                                         .transformToUni(orderItemsResp -> {
                                                                                                                 if (orderItemsResp == null
                                                                                                                                 || orderItemsResp
-                                                                                                                                                .getDataCount() == 0
-                                                                                                                                || !"success".equalsIgnoreCase(
-                                                                                                                                                orderItemsResp.getStatus())) {
+                                                                                                                                .isEmpty()) {
                                                                                                                         logger.error("No order items found | orderId={}",
-                                                                                                                                        req.getOrderID());
+                                                                                                                                req.getOrderID());
                                                                                                                         return Uni.createFrom()
-                                                                                                                                        .item(new ApiResponse<>(
-                                                                                                                                                        "error",
-                                                                                                                                                        "No order items found",
-                                                                                                                                                        (TransactionResponse) null));
+                                                                                                                                .item(new ApiResponse<>(
+                                                                                                                                "error",
+                                                                                                                                "No order items found",
+                                                                                                                                (TransactionResponse) null));
                                                                                                                 }
 
                                                                                                                 int totalAmount = 0;
-                                                                                                                for (var item : orderItemsResp
-                                                                                                                                .getDataList()) {
-                                                                                                                        if (item.getQuantity() <= 0) {
+                                                                                                                for (var item : orderItemsResp) {
+                                                                                                                        if (item.quantity() <= 0) {
                                                                                                                                 return Uni.createFrom()
                                                                                                                                                 .item(new ApiResponse<>(
                                                                                                                                                                 "error",
@@ -189,8 +170,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                                                                                                 (TransactionResponse) null));
                                                                                                                         }
                                                                                                                         totalAmount += item
-                                                                                                                                        .getPrice()
-                                                                                                                                        * item.getQuantity();
+                                                                                                                                .price()
+                                                                                                                                * item.quantity();
                                                                                                                 }
                                                                                                                 int ppn = totalAmount
                                                                                                                                 * 11
@@ -320,18 +301,11 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                         (TransactionResponse) null));
                                                                 }
 
-                                                                return merchantQueryService.findByIdMerchant(
-                                                                                pb.merchant.Merchant.FindByIdMerchantRequest
-                                                                                                .newBuilder()
-                                                                                                .setMerchantId(req
-                                                                                                                .getMerchantID())
-                                                                                                .build())
+                                                                return merchantQueryPort.findByMerchantId(req.getMerchantID())
+                                                                                .onFailure().recoverWithItem(err -> null)
                                                                                 .onItem()
-                                                                                .transformToUni(merchantResp -> {
-                                                                                        if (merchantResp == null
-                                                                                                        || !merchantResp.hasData()
-                                                                                                        || !"success".equalsIgnoreCase(
-                                                                                                                        merchantResp.getStatus())) {
+                                                                                .transformToUni(merchant -> {
+                                                                                        if (merchant == null) {
                                                                                                 logger.error("Merchant not found | merchantId={}",
                                                                                                                 req.getMerchantID());
                                                                                                 return Uni.createFrom()
@@ -341,42 +315,30 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                                                                 (TransactionResponse) null));
                                                                                         }
 
-                                                                                        return orderQueryService
-                                                                                                        .findById(pb.order.Order.FindByIdOrderRequest
-                                                                                                                        .newBuilder()
-                                                                                                                        .setId(req.getOrderID())
-                                                                                                                        .build())
+                                                                                        return orderQueryPort
+                                                                                                        .findById(req.getOrderID())
+                                                                                                        .onFailure().recoverWithItem(err -> null)
                                                                                                         .onItem()
-                                                                                                        .transformToUni(orderResp -> {
-                                                                                                                if (orderResp == null
-                                                                                                                                || !orderResp.hasData()
-                                                                                                                                || !"success".equalsIgnoreCase(
-                                                                                                                                                orderResp.getStatus())) {
+                                                                                                        .transformToUni(order -> {
+                                                                                                                if (order == null) {
                                                                                                                         logger.error("Order not found | orderId={}",
-                                                                                                                                        req.getOrderID());
+                                                                                                                                req.getOrderID());
                                                                                                                         return Uni.createFrom()
-                                                                                                                                        .item(new ApiResponse<>(
-                                                                                                                                                        "error",
-                                                                                                                                                        "Order not found",
-                                                                                                                                                        (TransactionResponse) null));
+                                                                                                                                .item(new ApiResponse<>(
+                                                                                                                                                "error",
+                                                                                                                                                "Order not found",
+                                                                                                                                                (TransactionResponse) null));
                                                                                                                 }
 
-                                                                                                                return orderItemQueryService
-                                                                                                                                .findOrderItemByOrder(
-                                                                                                                                                pb.order_item.OrderItem.FindByIdOrderItemRequest
-                                                                                                                                                                .newBuilder()
-                                                                                                                                                                .setOrderId(req
-                                                                                                                                                                                .getOrderID())
-                                                                                                                                                                .build())
+                                                                                                                return orderItemQueryPort
+                                                                                                                                .findOrderItemByOrder(req.getOrderID())
                                                                                                                                 .onItem()
                                                                                                                                 .transformToUni(orderItemsResp -> {
                                                                                                                                         if (orderItemsResp == null
-                                                                                                                                                        || orderItemsResp
-                                                                                                                                                                        .getDataCount() == 0
-                                                                                                                                                        || !"success".equalsIgnoreCase(
-                                                                                                                                                                        orderItemsResp.getStatus())) {
+                                                                                                                                                || orderItemsResp
+                                                                                                                                                        .isEmpty()) {
                                                                                                                                                 logger.error("No order items found | orderId={}",
-                                                                                                                                                                req.getOrderID());
+                                                                                                                                                        req.getOrderID());
                                                                                                                                                 return Uni.createFrom()
                                                                                                                                                                 .item(new ApiResponse<>(
                                                                                                                                                                                 "error",
@@ -385,9 +347,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                                                                         }
 
                                                                                                                                         int totalAmount = 0;
-                                                                                                                                        for (var item : orderItemsResp
-                                                                                                                                                        .getDataList()) {
-                                                                                                                                                if (item.getQuantity() <= 0) {
+                                                                                                                                        for (var item : orderItemsResp) {
+                                                                                                                                                if (item.quantity() <= 0) {
                                                                                                                                                         return Uni.createFrom()
                                                                                                                                                                         .item(new ApiResponse<>(
                                                                                                                                                                                         "error",
@@ -395,8 +356,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                                                                                                                         (TransactionResponse) null));
                                                                                                                                                 }
                                                                                                                                                 totalAmount += item
-                                                                                                                                                                .getPrice()
-                                                                                                                                                                * item.getQuantity();
+                                                                                                                                                        .price()
+                                                                                                                                                        * item.quantity();
                                                                                                                                         }
                                                                                                                                         int ppn = totalAmount
                                                                                                                                                         * 11

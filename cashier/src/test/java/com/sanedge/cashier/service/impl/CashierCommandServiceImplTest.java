@@ -25,6 +25,8 @@ import com.sanedge.cashier.repository.CashierQueryRepository;
 import com.sanedge.common.config.RedisService;
 import com.sanedge.common.domain.response.ApiResponse;
 import com.sanedge.common.observability.TracingMetrics;
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.user.UserQueryPort;
 
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
@@ -45,10 +47,10 @@ class CashierCommandServiceImplTest {
     private TracingMetrics tracingMetrics;
 
     @Mock
-    private pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub merchantQueryService;
+    private MerchantQueryPort merchantQueryPort;
 
     @Mock
-    private pb.user.MutinyUserQueryServiceGrpc.MutinyUserQueryServiceStub userQueryService;
+    private UserQueryPort userQueryPort;
 
     private CashierCommandServiceImpl cashierCommandService;
 
@@ -58,11 +60,9 @@ class CashierCommandServiceImplTest {
                 cashierCommandRepository,
                 cashierQueryRepository,
                 redisService,
-                tracingMetrics);
-
-        // Inject @GrpcClient fields via reflection
-        injectField(cashierCommandService, "merchantQueryService", merchantQueryService);
-        injectField(cashierCommandService, "userQueryService", userQueryService);
+                tracingMetrics,
+                merchantQueryPort,
+                userQueryPort);
 
         lenient().doAnswer(invocation -> {
             Supplier<Uni<?>> supplier = invocation.getArgument(3);
@@ -73,16 +73,6 @@ class CashierCommandServiceImplTest {
                         anyString(),
                         any(Attributes.class),
                         any());
-    }
-
-    private void injectField(Object target, String fieldName, Object value) {
-        try {
-            java.lang.reflect.Field field = target.getClass().getDeclaredField(fieldName);
-            field.setAccessible(true);
-            field.set(target, value);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to inject " + fieldName, e);
-        }
     }
 
     private Cashier createMockCashier(Long id, String name, Long merchantId, Long userId) {

@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: point-of-sale
+data:
+  APP_ENV: "kubernetes"
+  # Satu bounded context = satu PostgreSQL + satu PgBouncer (lihat
+  # database/postgres-*.yaml dan database/pgbouncer-*.yaml). Prefix dipilih
+  # lewat pkg/database/names.go
+  # (IdentityCluster, CatalogCluster, ...) — service tidak perlu tahu instance
+  # mana yang ia pakai.
+  #
+  # DB_HOST / DB_PORT / DB_NAME sengaja TIDAK didefinisikan: tanpa fallback itu,
+  # prefix yang salah gagal keras di guard NewClientWithPrefix alih-alih diam-diam
+  # menyambung ke database bounded context lain.
+  DB_DRIVER: "postgres"
+  DB_IDENTITY_HOST: "pgbouncer-identity.point-of-sale.svc.cluster.local"
+  DB_IDENTITY_PORT: "5432"
+  DB_IDENTITY_NAME: "pos_identity"
+  DB_CATALOG_HOST: "pgbouncer-catalog.point-of-sale.svc.cluster.local"
+  DB_CATALOG_PORT: "5432"
+  DB_CATALOG_NAME: "pos_catalog"
+  DB_SALES_HOST: "pgbouncer-sales.point-of-sale.svc.cluster.local"
+  DB_SALES_PORT: "5432"
+  DB_SALES_NAME: "pos_sales"
+  DB_MERCHANT_HOST: "pgbouncer-merchant.point-of-sale.svc.cluster.local"
+  DB_MERCHANT_PORT: "5432"
+  DB_MERCHANT_NAME: "pos_merchant"
+  DB_EMAIL_HOST: "pgbouncer-email.point-of-sale.svc.cluster.local"
+  DB_EMAIL_PORT: "5432"
+  DB_EMAIL_NAME: "pos_email"
+  DB_MAX_OPEN_CONNS: "50"
+  DB_MIN_IDLE_CONNS: "10"
+  DB_CONN_MAX_LIFETIME: "30m"
+  DB_CONN_MAX_IDLE_TIME: "15m"
+  # GHCR image owner — must match github.repository_owner (lowercase) of the
+  # repository whose CI pushes images to ghcr.io/<owner>/vertx-point-of-sale/...
+  GHCR_OWNER: "mamangrust"
+  APP_LOGGER: "production"
+  SMTP_SERVER: "smtp.ethereal.email"
+  SMTP_PORT: "587"
+
+  KAFKA_BROKERS: "kafka.point-of-sale.svc.cluster.local:9092"
+
+  # ClickHouse — OLAP engine for the stats pipeline (F3).
+  # CLICKHOUSE_PASSWORD is injected from app-secrets, never stored here.
+  CLICKHOUSE_ADDR: "clickhouse.point-of-sale.svc.cluster.local:9000"
+  CLICKHOUSE_DATABASE: "pos"
+  CLICKHOUSE_USERNAME: "dragon"
+
+  REDIS_CLUSTER_ENABLED: "true"
+  REDIS_CLUSTER_ENDPOINTS: "redis-cluster-0.redis-cluster-headless.point-of-sale.svc.cluster.local:6379,redis-cluster-1.redis-cluster-headless.point-of-sale.svc.cluster.local:6379,redis-cluster-2.redis-cluster-headless.point-of-sale.svc.cluster.local:6379,redis-cluster-3.redis-cluster-headless.point-of-sale.svc.cluster.local:6379,redis-cluster-4.redis-cluster-headless.point-of-sale.svc.cluster.local:6379,redis-cluster-5.redis-cluster-headless.point-of-sale.svc.cluster.local:6379"
+  REDIS_HOST: "redis-cluster"
+  REDIS_PORT: "6379"
+  REDIS_DB_AUTH: "0"
+  REDIS_DB_ROLE: "1"
+  REDIS_DB_USER: "2"
+  REDIS_DB_CATEGORY: "3"
+  REDIS_DB_MERCHANT: "4"
+  REDIS_DB_ORDER_ITEM: "5"
+  REDIS_DB_ORDER: "6"
+  REDIS_DB_PRODUCT: "7"
+  REDIS_DB_TRANSACTION: "8"
+  REDIS_DB_CART: "9"
+  REDIS_DB_REVIEW: "10"
+  REDIS_DB_SLIDER: "11"
+  REDIS_DB_SHIPPING_ADDRESS: "12"
+  REDIS_DB_BANNER: "13"
+  REDIS_DB_MERCHANT_AWARD: "14"
+  REDIS_DB_MERCHANT_BUSINESS: "15"
+  REDIS_DB_MERCHANT_DETAIL: "16"
+  REDIS_DB_MERCHANT_POLICY: "17"
+  REDIS_DB_REVIEW_DETAIL: "18"
+
+  OTEL_ENDPOINT: "otel-collector.point-of-sale.svc.cluster.local:4317"
+
+  GRPC_CASHIER_ADDR: "cashier.point-of-sale.svc.cluster.local:50061"
+  GRPC_CASHIER_PORT: "50061"
+  GRPC_AUTH_ADDR: "auth.point-of-sale.svc.cluster.local:50051"
+  GRPC_ROLE_ADDR: "role.point-of-sale.svc.cluster.local:50052"
+  GRPC_USER_ADDR: "user.point-of-sale.svc.cluster.local:50053"
+  GRPC_CATEGORY_ADDR: "category.point-of-sale.svc.cluster.local:50062"
+  GRPC_MERCHANT_ADDR: "merchant.point-of-sale.svc.cluster.local:50054"
+  GRPC_ORDER_ITEM_ADDR: "order-item.point-of-sale.svc.cluster.local:50057"
+  # Dial key consumed by apigateway/order/transaction/stats-writer adapters.
+  GRPC_ORDERITEM_ADDR: "order-item.point-of-sale.svc.cluster.local:50057"
+  GRPC_ORDER_ADDR: "order.point-of-sale.svc.cluster.local:50055"
+  GRPC_PRODUCT_ADDR: "product.point-of-sale.svc.cluster.local:50056"
+  GRPC_TRANSACTION_ADDR: "transaction.point-of-sale.svc.cluster.local:50058"
+  # DIAL address used by apigateway.
+  GRPC_STATS_READER_ADDR: "stats-reader.point-of-sale.svc.cluster.local:50070"
+  # LISTEN address used by stats-reader itself (must be a bind address).
+  STATS_READER_LISTEN_ADDR: ":50070"
+
+  GRPC_AUTH_PORT: "50051"
+  GRPC_ROLE_PORT: "50052"
+  GRPC_USER_PORT: "50053"
+  GRPC_CATEGORY_PORT: "50062"
+  GRPC_MERCHANT_PORT: "50054"
+  GRPC_ORDER_ITEM_PORT: "50057"
+  GRPC_ORDER_PORT: "50055"
+  GRPC_PRODUCT_PORT: "50056"
+  GRPC_TRANSACTION_PORT: "50058"
+  GRPC_STATS_READER_PORT: "50070"
+
+  METRIC_EMAIL_ADDR: "8080"
+  METRIC_AUTH_ADDR: "8081"
+  METRIC_ROLE_ADDR: "8082"
+  METRIC_USER_ADDR: "8083"
+  METRIC_CATEGORY_ADDR: "8084"
+  METRIC_MERCHANT_ADDR: "8085"
+  METRIC_ORDER_ITEM_ADDR: "8086"
+  METRIC_ORDER_ADDR: "8087"
+  METRIC_PRODUCT_ADDR: "8088"
+  METRIC_TRANSACTION_ADDR: "8089"
+  METRIC_CART_ADDR: "8090"
+  METRIC_REVIEW_ADDR: "8091"
+  METRIC_SLIDER_ADDR: "8092"
+  METRIC_SHIPPING_ADDR: "8093"
+  METRIC_BANNER_ADDR: "8094"
+  METRIC_MERCHANT_AWARD_ADDR: "8095"
+  METRIC_MERCHANT_BUSINESS_ADDR: "8096"
+  METRIC_MERCHANT_DETAIL_ADDR: "8097"
+  METRIC_MERCHANT_POLICY_ADDR: "8098"
+  METRIC_REVIEW_DETAIL_ADDR: "8099"

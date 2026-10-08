@@ -1,5 +1,7 @@
-CREATE TABLE IF NOT EXISTS "pos_catalog"."categories" (
-    "category_id" BIGINT NOT NULL DEFAULT nextval('pos_catalog.categories_seq') PRIMARY KEY,
+CREATE SEQUENCE IF NOT EXISTS "categories_seq";
+
+CREATE TABLE IF NOT EXISTS "categories" (
+    "category_id" BIGINT NOT NULL DEFAULT nextval('categories_seq') PRIMARY KEY,
     "name" VARCHAR(100) NOT NULL,
     "description" TEXT,
     "slug_category" VARCHAR(255) UNIQUE,
@@ -9,4 +11,4 @@ CREATE TABLE IF NOT EXISTS "pos_catalog"."categories" (
 );
 
 
-CREATE INDEX IF NOT EXISTS "idx_categories_slug" ON "pos_catalog"."categories" ("slug_category");
+CREATE INDEX IF NOT EXISTS "idx_categories_slug" ON "categories" ("slug_category");

@@ -1,380 +1,748 @@
+name: pos-postgres-local
+
+# Satu database = satu bounded context: lima instance PostgreSQL terpisah,
+# masing-masing di depan PgBouncer-nya sendiri. Service (dan job migrasi) konek
+# lewat pooler, jadi DB_<CONTEXT>_HOST menunjuk ke container PgBouncer.
+# edoburu/pgbouncer selalu listen di port 5432 container; host memetakan
+# 6432-6436 supaya service host-run (.env root) bisa connect via localhost.
+# Prefix context dipilih lewat pkg/database/names.go (Cluster*).
 services:
-  postgres:
+  postgres_identity:
     image: postgres:17-alpine
-    container_name: postgres
+    container_name: pos-postgres-identity
     environment:
       POSTGRES_USER: DRAGON
       POSTGRES_PASSWORD: DRAGON
-      POSTGRES_DB: POINT_OF_SALE
-      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+      POSTGRES_DB: pos_identity
       PGDATA: /var/lib/postgresql/data/pgdata
-    command:
-      - "postgres"
-      - "-c"
-      - "max_connections=1000"
-      - "-c"
-      - "shared_buffers=4GB"
-      - "-c"
-      - "effective_cache_size=12GB"
-      - "-c"
-      - "maintenance_work_mem=512MB"
-      - "-c"
-      - "checkpoint_completion_target=0.9"
-      - "-c"
-      - "wal_buffers=16MB"
-      - "-c"
-      - "default_statistics_target=100"
-      - "-c"
-      - "random_page_cost=1.1"
-      - "-c"
-      - "effective_io_concurrency=200"
-      - "-c"
-      - "work_mem=32MB"
-      - "-c"
-      - "min_wal_size=1GB"
-      - "-c"
-      - "max_wal_size=4GB"
-      - "-c"
-      - "max_worker_processes=8"
-      - "-c"
-      - "max_parallel_workers_per_gather=4"
-      - "-c"
-      - "max_parallel_workers=8"
-      - "-c"
-      - "max_parallel_maintenance_workers=4"
-      - "-c"
-      - "log_min_duration_statement=1000"
-      - "-c"
-      - "log_line_prefix=%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
-      - "-c"
-      - "superuser_reserved_connections=10"
-      - "-c"
-      - "idle_in_transaction_session_timeout=60000"
-      - "-c"
-      - "statement_timeout=30000"
-    ports:
-      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_identity_data:/var/lib/postgresql/data
     networks:
-      - app_network
+      - app_pointofsale_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U DRAGON -d POINT_OF_SALE"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    container_name: postgres_exporter
-    restart: unless-stopped
-    environment:
-      DATA_SOURCE_NAME: "postgresql://DRAGON:DRAGON@postgres:5432/POINT_OF_SALE?sslmode=disable&connect_timeout=10"
-      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
-      PG_EXPORTER_DISABLE_DEFAULT_METRICS: "false"
-      PG_EXPORTER_DISABLE_SETTINGS_METRICS: "false"
-    ports:
-      - "9187:9187"
-    depends_on:
-      - postgres
-    networks:
-      - app_network
-    deploy:
-      resources:
-        limits:
-          cpus: "0.25"
-          memory: 256M
-
-  pgbouncer:
-    image: edoburu/pgbouncer:latest
-    container_name: pgbouncer_debug
-    restart: unless-stopped
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: DRAGON
-      DB_PASSWORD: DRAGON
-      DB_NAME: POINT_OF_SALE
-      AUTH_TYPE: scram-sha-256
-      POOL_MODE: transaction
-      DEFAULT_POOL_SIZE: 200
-      MIN_POOL_SIZE: 50
-      MAX_DB_CONNECTIONS: 800
-      MAX_CLIENT_CONN: 10000
-      RESERVE_POOL_SIZE: 100
-      RESERVE_POOL_TIMEOUT: 5
-      SERVER_IDLE_TIMEOUT: 600
-      QUERY_TIMEOUT: 30
-      SERVER_CONNECT_TIMEOUT: 10
-      SERVER_LOGIN_RETRY: 5
-      SERVER_RESET_QUERY: DISCARD ALL
-      SERVER_RESET_QUERY_ALWAYS: 0
-      TCP_KEEPALIVE: 1
-      TCP_KEEPCNT: 5
-      TCP_KEEPIDLE: 30
-      TCP_KEEPINTVL: 10
-      ADMIN_USERS: DRAGON
-      STATS_USERS: DRAGON
-      LOG_CONNECTIONS: 0
-      LOG_DISCONNECTIONS: 0
-      LOG_POOLER_ERRORS: 1
-    ports:
-      - "6432:5432"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app_network
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "PGPASSWORD=DRAGON psql -h localhost -p 5432 -U DRAGON -d pgbouncer -c 'SHOW POOLS;' || exit 1",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_identity"]
       interval: 10s
       timeout: 5s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_identity:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-identity
+    environment:
+      DB_HOST: postgres_identity
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_identity
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6432:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_identity:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_identity"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_merchant:
+    image: postgres:17-alpine
+    container_name: pos-postgres-merchant
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_merchant
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_merchant_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_merchant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_merchant:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-merchant
+    environment:
+      DB_HOST: postgres_merchant
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_merchant
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6433:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_merchant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_merchant"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_catalog:
+    image: postgres:17-alpine
+    container_name: pos-postgres-catalog
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_catalog
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_catalog_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_catalog"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_catalog:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-catalog
+    environment:
+      DB_HOST: postgres_catalog
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_catalog
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6434:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_catalog:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_catalog"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_sales:
+    image: postgres:17-alpine
+    container_name: pos-postgres-sales
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_sales
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_sales_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_sales"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_sales:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-sales
+    environment:
+      DB_HOST: postgres_sales
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_sales
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6435:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_sales:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_sales"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres_email:
+    image: postgres:17-alpine
+    container_name: pos-postgres-email
+    environment:
+      POSTGRES_USER: DRAGON
+      POSTGRES_PASSWORD: DRAGON
+      POSTGRES_DB: pos_email
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_email_data:/var/lib/postgresql/data
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U DRAGON -d pos_email"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  pgbouncer_email:
+    image: edoburu/pgbouncer:latest
+    container_name: pos-pgbouncer-email
+    environment:
+      DB_HOST: postgres_email
+      DB_PORT: "5432"
+      DB_USER: DRAGON
+      DB_PASSWORD: DRAGON
+      DB_NAME: pos_email
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "1000"
+      DEFAULT_POOL_SIZE: "20"
+      MAX_PREPARED_STATEMENTS: "100"
+    ports:
+      - "6436:5432"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      postgres_email:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U DRAGON -d pos_email"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   pyroscope:
     image: grafana/pyroscope:latest
     ports:
-      - 4040:4040
+      - "4040:4040"
     networks:
-      - app_network
+      - app_pointofsale_network
 
-  redis-node-1:
-    image: redis:7.4
-    container_name: redis_node_1
-    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --requirepass dragon_knight --masterauth dragon_knight
-    ports:
-      - "6380:6379"
+  migrate:
+    image: migrate-pointofsale-service:1.0
+    container_name: migrate
     volumes:
-      - redis_node_1_data:/data
-    restart: unless-stopped
+      - ./docker.env:/app/docker.env
+      - ../../service:/app/service
+    env_file: ./docker.env
+    environment:
+      APP_ENV: docker
     networks:
-      - app_network
-
-  redis-node-2:
-    image: redis:7.4
-    container_name: redis_node_2
-    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --requirepass dragon_knight --masterauth dragon_knight
-    volumes:
-      - redis_node_2_data:/data
-    restart: unless-stopped
-    networks:
-      - app_network
-
-  redis-node-3:
-    image: redis:7.4
-    container_name: redis_node_3
-    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --requirepass dragon_knight --masterauth dragon_knight
-    volumes:
-      - redis_node_3_data:/data
-    restart: unless-stopped
-    networks:
-      - app_network
-
-  redis-node-4:
-    image: redis:7.4
-    container_name: redis_node_4
-    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --requirepass dragon_knight --masterauth dragon_knight
-    volumes:
-      - redis_node_4_data:/data
-    restart: unless-stopped
-    networks:
-      - app_network
-
-  redis-node-5:
-    image: redis:7.4
-    container_name: redis_node_5
-    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --requirepass dragon_knight --masterauth dragon_knight
-    volumes:
-      - redis_node_5_data:/data
-    restart: unless-stopped
-    networks:
-      - app_network
-
-  redis-node-6:
-    image: redis:7.4
-    container_name: redis_node_6
-    command: redis-server --appendonly yes --cluster-enabled yes --cluster-config-file nodes.conf --cluster-node-timeout 5000 --requirepass dragon_knight --masterauth dragon_knight
-    volumes:
-      - redis_node_6_data:/data
-    restart: unless-stopped
-    networks:
-      - app_network
-
-  redis-cluster-creator:
-    image: redis:7.4
-    container_name: redis_cluster_creator
+      - app_pointofsale_network
     depends_on:
-      - redis-node-1
-      - redis-node-2
-      - redis-node-3
-      - redis-node-4
-      - redis-node-5
-      - redis-node-6
-    entrypoint: >
-      sh -c "sleep 5 && echo 'yes' | redis-cli -a dragon_knight --cluster create
-      redis-node-1:6379
-      redis-node-2:6379
-      redis-node-3:6379
-      redis-node-4:6379
-      redis-node-5:6379
-      redis-node-6:6379
-      --cluster-replicas 1"
-    networks:
-      - app_network
+      pgbouncer_identity:
+        condition: service_healthy
+      pgbouncer_catalog:
+        condition: service_healthy
+      pgbouncer_sales:
+        condition: service_healthy
+      pgbouncer_merchant:
+        condition: service_healthy
+      pgbouncer_email:
+        condition: service_healthy
 
-  node-exporter:
-    image: quay.io/prometheus/node-exporter
-    container_name: node-exporter
-    pid: "host"
-    networks:
-      - app_network
+  apigateway:
+    image: apigateway-pointofsale-service:1.0
+    container_name: apigateway_pointofsale
+    env_file: ./docker.env
     volumes:
-      - "/:/host:ro,rslave"
-    command:
-      - "--path.rootfs=/host"
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "5000:5000"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      auth:
+        condition: service_started
+      role:
+        condition: service_started
+      user:
+        condition: service_started
+      category:
+        condition: service_started
+      merchant:
+        condition: service_started
+      orderitem:
+        condition: service_started
+      order:
+        condition: service_started
+      product:
+        condition: service_started
+      transaction:
+        condition: service_started
+      stats_reader:
+        condition: service_started
+      redis_apigateway:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_apigateway
+      - REDIS_DB=0
+      - GRPC_STATS_READER_ADDR=stats_reader:50070
+
+  auth:
+    image: auth-pointofsale-service:1.0
+    container_name: auth_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50051:50051"
+      - "8081:8081"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_identity:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_auth:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_auth
+      - REDIS_DB=0
+
+  role:
+    image: role-pointofsale-service:1.0
+    container_name: role_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50052:50052"
+      - "8082:8082"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_identity:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_role:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_role
+      - REDIS_DB=0
+
+  user:
+    image: user-pointofsale-service:1.0
+    container_name: user_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50053:50053"
+      - "8083:8083"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_identity:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_user:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_user
+      - REDIS_DB=0
+
+  category:
+    image: category-pointofsale-service:1.0
+    container_name: category_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50054:50054"
+      - "8084:8084"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_catalog:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_category:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_category
+      - REDIS_DB=0
+
+  cashier:
+    image: cashier-pointofsale-service:1.0
+    container_name: cashier_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50055:50055"
+      - "8085:8085"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_merchant:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_cashier:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_cashier
+      - REDIS_DB=0
+
+  merchant:
+    image: merchant-pointofsale-service:1.0
+    container_name: merchant_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50056:50056"
+      - "8086:8086"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_merchant:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_merchant:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_merchant
+      - REDIS_DB=0
+
+  orderitem:
+    image: order_item-pointofsale-service:1.0
+    container_name: orderitem_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50057:50057"
+      - "8087:8087"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_sales:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_orderitem:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_orderitem
+      - REDIS_DB=0
+
+  order:
+    image: order-pointofsale-service:1.0
+    container_name: order_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50058:50058"
+      - "8088:8088"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_sales:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_order:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_order
+      - REDIS_DB=0
+
+  product:
+    image: product-pointofsale-service:1.0
+    container_name: product_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50059:50059"
+      - "8089:8089"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_catalog:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_product:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_product
+      - REDIS_DB=0
+
+  transaction:
+    image: transaction-pointofsale-service:1.0
+    container_name: transaction_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50060:50060"
+      - "8090:8090"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      pgbouncer_sales:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      redis_transaction:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - REDIS_HOST=redis_transaction
+      - REDIS_DB=0
+
+  # ClickHouse — OLAP engine for the stats pipeline (F3).
+  # CLICKHOUSE_USER/PASSWORD/DB create the user pkg/clickhouse expects.
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    container_name: clickhouse-pointofsale
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    environment:
+      CLICKHOUSE_DB: pos
+      CLICKHOUSE_USER: dragon
+      CLICKHOUSE_PASSWORD: dragon_knight
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - clickhouse_pointofsale_data:/var/lib/clickhouse
+      - ../../pkg/clickhouse/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - app_pointofsale_network
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user dragon --password dragon_knight --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # stats_writer — Kafka consumer that materializes stats events into ClickHouse.
+  # Also runs `backfill` on demand: docker compose run --rm stats_writer backfill
+  stats_writer:
+    image: stats_writer-pointofsale-service:1.0
+    container_name: stats_writer_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      kafka:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      order:
+        condition: service_started
+      product:
+        condition: service_started
+      transaction:
+        condition: service_started
+      orderitem:
+        condition: service_started
+      cashier:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - KAFKA_BROKERS=kafka:9092
+      - CLICKHOUSE_ADDR=clickhouse:9000
+      - CLICKHOUSE_DATABASE=pos
+      - CLICKHOUSE_USERNAME=dragon
+      - CLICKHOUSE_PASSWORD=dragon_knight
+      - GRPC_ORDER_ADDR=order:50058
+      - GRPC_PRODUCT_ADDR=product:50059
+      - GRPC_TRANSACTION_ADDR=transaction:50060
+      - GRPC_ORDERITEM_ADDR=orderitem:50057
+      - GRPC_CASHIER_ADDR=cashier:50055
+
+  # stats_reader — gRPC server (50070) that serves stats queries from ClickHouse.
+  stats_reader:
+    image: stats_reader-pointofsale-service:1.0
+    container_name: stats_reader_pointofsale
+    env_file: ./docker.env
+    volumes:
+      - ./docker.env:/app/docker.env
+      - ./logs:/var/log/app
+    ports:
+      - "50070:50070"
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis_apigateway:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    environment:
+      - OTEL_ENDPOINT=otel-collector:4317
+      - APP_ENV=docker
+      - STATS_READER_LISTEN_ADDR=:50070
+      - CLICKHOUSE_ADDR=clickhouse:9000
+      - CLICKHOUSE_DATABASE=pos
+      - CLICKHOUSE_USERNAME=dragon
+      - CLICKHOUSE_PASSWORD=dragon_knight
+      - REDIS_HOST=redis_apigateway
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=dragon_knight
+      - REDIS_DB=0
 
   kafka:
     image: apache/kafka:latest
-    container_name: my-kafka
+    container_name: my-kafka-pointofsale
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
-      # Fase 14 (K-6): PLAINTEXT DI SINI HANYA UNTUK DEV LOKAL.
-      # Produksi (k8s base) memakai SASL_SSL + SCRAM-SHA-256 + TLS — lihat
-      # deployments/kubernetes/base/kafka/kafka-deployment.yaml. Untuk menguji
-      # SASL lokal, aktifkan listener SASL_PLAINTEXT (lihat komentar di bawah).
-      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_HOST://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
       KAFKA_CLUSTER_ID: kraft-cluster-01
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      # Fase 14 (K-7): topik auto-created (termasuk email-service-topic-*) dibuat
-      # dengan 3 partition agar consumer email bisa diskalakan (>1 replica/HPA).
-      KAFKA_NUM_PARTITIONS: "3"
     networks:
-      - app_network
+      - app_pointofsale_network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1",
-        ]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 5
       start_period: 30s
 
-  alertmanager:
-    image: prom/alertmanager:v0.27.0
-    container_name: alertmanager
-    volumes:
-      - ./observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-    command:
-      - "--config.file=/etc/alertmanager/alertmanager.yml"
-    ports:
-      - "9093:9093"
-    networks:
-      - app_network
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ./observability/rules:/etc/prometheus/rules
-    networks:
-      - app_network
-    depends_on:
-      - otel-collector
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana-storage:/var/lib/grafana
-      # Grafana provisioning (Phase 6): datasources + email-service dashboard.
-      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-    networks:
-      - app_network
-    depends_on:
-      - prometheus
-      - jaeger
-      - alertmanager
-      - loki
-
-  nginx:
-    image: nginx:alpine
-    container_name: nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - apigateway
-    networks:
-      - app_network
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: otel-collector
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./observability/otel-collector.yaml:/etc/otel-collector-config.yaml:ro
-    ports:
-      - "4317:4317"
-      - "4318:4318"
-      - "13133:13133"
-      - "8889:8889"
-    depends_on:
-      - jaeger
-    networks:
-      - app_network
-    restart: unless-stopped
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.62.0
-    container_name: jaeger
-    ports:
-      - "16686:16686"
-      - "14250:14250"
-    networks:
-      - app_network
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-
   kafka-exporter:
     image: danielqsj/kafka-exporter:v1.9.0
-    container_name: kafka-exporter
+    container_name: kafka-exporter_pointofsale
     ports:
       - "9308:9308"
     networks:
-      - app_network
+      - app_pointofsale_network
     depends_on:
       kafka:
         condition: service_healthy
     command:
-      - "--kafka.server=my-kafka:9092"
+      - "--kafka.server=my-kafka-pointofsale:9092"
       - "--web.listen-address=0.0.0.0:9308"
       - "--log.level=debug"
     restart: unless-stopped
@@ -388,568 +756,272 @@ services:
       timeout: 10s
       retries: 3
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus_pointofsale
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../observability/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - ../../observability/rules:/etc/prometheus/rules
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      - otel-collector
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_pointofsale
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_pointofsale-storage:/var/lib/grafana
+    networks:
+      - app_pointofsale_network
+    depends_on:
+      - prometheus
+      - jaeger
+      - alertmanager
+      - loki
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx_pointofsale
+    ports:
+      - "80:80"
+    volumes:
+      - ../../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - apigateway
+    networks:
+      - app_pointofsale_network
+
+  redis_apigateway:
+    image: redis:7.4
+    container_name: redis_apigateway
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_apigateway_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_auth:
+    image: redis:7.4
+    container_name: redis_auth
+    command: >
+      redis-server
+      --requirepass dragon_knight
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+      --tcp-backlog 511
+      --timeout 0
+      --tcp-keepalive 300
+      --maxclients 10000
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_auth_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_role:
+    image: redis:7.4
+    container_name: redis_role
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_role_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_user:
+    image: redis:7.4
+    container_name: redis_user
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6382:6379"
+    volumes:
+      - redis_user_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_category:
+    image: redis:7.4
+    container_name: redis_category
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6383:6379"
+    volumes:
+      - redis_category_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_cashier:
+    image: redis:7.4
+    container_name: redis_cashier
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6384:6379"
+    volumes:
+      - redis_cashier_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_merchant:
+    image: redis:7.4
+    container_name: redis_merchant
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6385:6379"
+    volumes:
+      - redis_merchant_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_orderitem:
+    image: redis:7.4
+    container_name: redis_orderitem
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6386:6379"
+    volumes:
+      - redis_orderitem_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_order:
+    image: redis:7.4
+    container_name: redis_order
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6387:6379"
+    volumes:
+      - redis_order_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_product:
+    image: redis:7.4
+    container_name: redis_product
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6388:6379"
+    volumes:
+      - redis_product_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  redis_transaction:
+    image: redis:7.4
+    container_name: redis_transaction
+    command: ["redis-server", "--requirepass", "dragon_knight"]
+    ports:
+      - "6389:6379"
+    volumes:
+      - redis_transaction_data:/data
+    restart: unless-stopped
+    networks:
+      - app_pointofsale_network
+
+  node-exporter:
+    image: quay.io/prometheus/node-exporter
+    container_name: node-exporter_pointofsale
+    pid: "host"
+    networks:
+      - app_pointofsale_network
+    volumes:
+      - "/:/host:ro,rslave"
+    command:
+      - '--path.rootfs=/host'
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector_pointofsale
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ../../observability/otel-collector.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "13133:13133"
+      - "8889:8889"
+    networks:
+      - app_pointofsale_network
+    restart: unless-stopped
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: jaeger_pointofsale
+    ports:
+      - "6831:6831/udp"
+      - "16686:16686"
+    networks:
+      - app_pointofsale_network
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager_pointofsale
+    volumes:
+      - ../../observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    ports:
+      - "9093:9093"
+    networks:
+      - app_pointofsale_network
+
   loki:
-    container_name: loki
-    image: grafana/loki:3.5.8
+    image: grafana/loki:2.9.0
+    container_name: loki_pointofsale
     ports:
       - "3100:3100"
     volumes:
-      - ./observability/loki-config.yaml:/etc/loki/local-config.yaml
-      - loki-data:/loki
+      - ../../observability/loki-config.yaml:/etc/loki/local-config.yaml
+      - loki_pointofsale_data:/loki
     command: -config.file=/etc/loki/local-config.yaml
     networks:
-      - app_network
-
-  # db-migration removed in F1 — each domain module runs its own Flyway at startup
-  # Deploy ordering: user → merchant → category → order → transaction
-
-  clickhouse:
-    image: clickhouse/clickhouse-server:24.3
-    container_name: clickhouse
-    ports:
-      - "8123:8123"
-      - "9000:9000"
-    environment:
-      CLICKHOUSE_DB: pos_stats
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-e2epass}
-    volumes:
-      - clickhouse_data:/var/lib/clickhouse
-    networks:
-      - app_network
-    healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  stats-writer:
-    build:
-      context: ../..
-      dockerfile: stats-writer/Dockerfile
-    image: quarkus-grpc-pointofsale/stats-writer:latest
-    container_name: stats-writer
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      kafka:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-    environment:
-      - KAFKA_BROKER=kafka:9092
-      - CLICKHOUSE_HOST=clickhouse
-      - CLICKHOUSE_PORT=8123
-      - CLICKHOUSE_DATABASE=pos_stats
-      - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-e2epass}
-    restart: unless-stopped
-
-  stats-backfill:
-    build:
-      context: ../..
-      dockerfile: stats-backfill/Dockerfile
-    image: quarkus-grpc-pointofsale/stats-backfill:latest
-    container_name: stats-backfill
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      user:
-        condition: service_started
-      merchant:
-        condition: service_started
-      order:
-        condition: service_started
-      transaction:
-        condition: service_started
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=DRAGON
-      - DB_PASS=DRAGON
-      - DB_NAME=POINT_OF_SALE
-      - BACKFILL_DOMAINS=${BACKFILL_DOMAINS:-order,transaction}
-      - BACKFILL_FROM=${BACKFILL_FROM:-2024-01-01}
-
-  stats-reader:
-    build:
-      context: ../..
-      dockerfile: stats-reader/Dockerfile
-    image: quarkus-grpc-pointofsale/stats-reader:latest
-    container_name: stats-reader
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    ports:
-      - "9015:9015"
-    networks:
-      - app_network
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    environment:
-      - CLICKHOUSE_HOST=clickhouse
-      - CLICKHOUSE_PORT=8123
-      - CLICKHOUSE_DATABASE=pos_stats
-      - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-e2epass}
-      - GRPC_STATS_READER_PORT=9015
-    restart: "no"
-
-  seeder:
-    build:
-      context: ../..
-      dockerfile: seeder/Dockerfile
-    image: quarkus-grpc-pointofsale/seeder:latest
-    container_name: seeder
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      user:
-        condition: service_started
-      merchant:
-        condition: service_started
-      category:
-        condition: service_started
-      order:
-        condition: service_started
-      transaction:
-        condition: service_started
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=DRAGON
-      - DB_PASS=DRAGON
-      - DB_NAME=POINT_OF_SALE
-      - SEED_DOMAINS=${SEED_DOMAINS:-identity,merchant,cashier,catalog,order,transaction}
-    restart: "no"
-
-  apigateway:
-    build:
-      context: ../..
-      dockerfile: gateway/Dockerfile
-    image: quarkus-grpc-pointofsale/apigateway:latest
-    container_name: apigateway
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    ports:
-      - "5000:5000"
-      - "8091:8091"
-    networks:
-      - app_network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      redis-node-1:
-        condition: service_started
-      auth:
-        condition: service_started
-      role:
-        condition: service_started
-      merchant:
-        condition: service_started
-      transaction:
-        condition: service_started
-      cashier:
-        condition: service_started
-      category:
-        condition: service_started
-      product:
-        condition: service_started
-      order:
-        condition: service_started
-      order_item:
-        condition: service_started
-      user:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_APIGATEWAY}
-      - REDIS_PORT=${REDIS_PORT_APIGATEWAY}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_APIGATEWAY}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - HTTP_PORT=5000
-      - QUARKUS_HTTP_PORT=5000
-
-  auth:
-    build:
-      context: ../..
-      dockerfile: auth/Dockerfile
-    image: quarkus-grpc-pointofsale/auth:latest
-    container_name: auth
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      user:
-        condition: service_started
-      order:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_AUTH}
-      - REDIS_PORT=${REDIS_PORT_AUTH}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_AUTH}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_AUTH_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_AUTH_PORT}
-
-  merchant:
-    build:
-      context: ../..
-      dockerfile: merchant/Dockerfile
-    image: quarkus-grpc-pointofsale/merchant:latest
-    container_name: merchant
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      user:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_MERCHANT}
-      - REDIS_PORT=${REDIS_PORT_MERCHANT}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_MERCHANT}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_MERCHANT_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_MERCHANT_PORT}
-
-  role:
-    build:
-      context: ../..
-      dockerfile: role/Dockerfile
-    image: quarkus-grpc-pointofsale/role:latest
-    container_name: role
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      user:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_ROLE}
-      - REDIS_PORT=${REDIS_PORT_ROLE}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_ROLE}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_ROLE_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_ROLE_PORT}
-
-  user:
-    build:
-      context: ../..
-      dockerfile: user/Dockerfile
-    image: quarkus-grpc-pointofsale/user:latest
-    container_name: user
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_USER=DRAGON
-      - DB_PASS=DRAGON
-      - DB_NAME=POINT_OF_SALE
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_USER_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_USER_PORT}
-
-  transaction:
-    build:
-      context: ../..
-      dockerfile: transaction/Dockerfile
-    image: quarkus-grpc-pointofsale/transaction:latest
-    container_name: transaction
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      order:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_TRANSACTION}
-      - REDIS_PORT=${REDIS_PORT_TRANSACTION}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_TRANSACTION}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_TRANSACTION_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_TRANSACTION_PORT}
-
-  cashier:
-    build:
-      context: ../..
-      dockerfile: cashier/Dockerfile
-    image: quarkus-grpc-pointofsale/cashier:latest
-    container_name: cashier
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      merchant:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_CASHIER}
-      - REDIS_PORT=${REDIS_PORT_CASHIER}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_CASHIER}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_CASHIER_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_CASHIER_PORT}
-
-  category:
-    build:
-      context: ../..
-      dockerfile: category/Dockerfile
-    image: quarkus-grpc-pointofsale/category:latest
-    container_name: category
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      merchant:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_CATEGORY}
-      - REDIS_PORT=${REDIS_PORT_CATEGORY}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_CATEGORY}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_CATEGORY_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_CATEGORY_PORT}
-
-  product:
-    build:
-      context: ../..
-      dockerfile: product/Dockerfile
-    image: quarkus-grpc-pointofsale/product:latest
-    container_name: product
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      category:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_PRODUCT}
-      - REDIS_PORT=${REDIS_PORT_PRODUCT}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_PRODUCT}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_PRODUCT_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_PRODUCT_PORT}
-
-  order:
-    build:
-      context: ../..
-      dockerfile: order/Dockerfile
-    image: quarkus-grpc-pointofsale/order:latest
-    container_name: order
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      category:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_ORDER}
-      - REDIS_PORT=${REDIS_PORT_ORDER}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_ORDER}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_ORDER_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_ORDER_PORT}
-
-  order_item:
-    build:
-      context: ../..
-      dockerfile: order_item/Dockerfile
-    image: quarkus-grpc-pointofsale/order_item:latest
-    container_name: order_item
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      order:
-        condition: service_started
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-      redis-node-1:
-        condition: service_started
-    environment:
-      - REDIS_HOST=${REDIS_HOST_ORDERITEM}
-      - REDIS_PORT=${REDIS_PORT_ORDERITEM}
-      - REDIS_PASSWORD=${REDIS_PASSWORD_ORDERITEM}
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - GRPC_PORT=${GRPC_ORDER_ITEM_PORT}
-      - QUARKUS_GRPC_SERVER_PORT=${GRPC_ORDER_ITEM_PORT}
-
-  email-service:
-    build:
-      context: ../..
-      dockerfile: email-service/Dockerfile
-    image: quarkus-grpc-pointofsale/email-service:latest
-    container_name: email-service
-    env_file: ./docker.env
-    volumes:
-      - ./docker.env:/app/docker.env
-    networks:
-      - app_network
-    depends_on:
-      kafka:
-        condition: service_healthy
-      otel-collector:
-        condition: service_started
-    environment:
-      - OTEL_ENDPOINT=otel-collector:4317
-      - APP_ENV=docker
-      - KAFKA_BROKERS=kafka:9092
-      - SMTP_SERVER=${SMTP_SERVER}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - HTTP_PORT=8098
-      - QUARKUS_HTTP_PORT=8098
+      - app_pointofsale_network
 
 volumes:
-  loki-data:
-  grafana-storage:
-  postgres_data:
-  kafka_data:
-  redis_node_1_data:
-  redis_node_2_data:
-  redis_node_3_data:
-  redis_node_4_data:
-  redis_node_5_data:
-  redis_node_6_data:
-  clickhouse_data:
+  postgres_identity_data:
+  postgres_catalog_data:
+  postgres_sales_data:
+  postgres_merchant_data:
+  postgres_email_data:
+  loki_pointofsale_data:
+  grafana_pointofsale-storage:
+  kafka_pointofsale_data:
+  clickhouse_pointofsale_data:
+  redis_apigateway_data:
+  redis_auth_data:
+  redis_role_data:
+  redis_user_data:
+  redis_category_data:
+  redis_cashier_data:
+  redis_merchant_data:
+  redis_orderitem_data:
+  redis_order_data:
+  redis_product_data:
+  redis_transaction_data:
 
 networks:
-  app_network:
+  app_pointofsale_network:
     driver: bridge

@@ -3,6 +3,7 @@ package com.sanedge.order.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -39,15 +40,15 @@ import com.sanedge.order.repository.OutboxRepository;
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
 import jakarta.validation.Validator;
-import pb.cashier.MutinyCashierServiceGrpc.MutinyCashierServiceStub;
-import pb.merchant.Merchant;
-import pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub;
-import pb.order_item.MutinyOrderItemCommandServiceGrpc.MutinyOrderItemCommandServiceStub;
-import pb.order_item.OrderItemCommand;
-import pb.product.MutinyProductCommandServiceGrpc.MutinyProductCommandServiceStub;
-import pb.product.MutinyProductServiceGrpc.MutinyProductServiceStub;
-import pb.product.Product;
-import pb.product.ProductCommand;
+import com.sanedge.common.adapter.cashier.CashierQueryPort;
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.model.Cashier;
+import com.sanedge.common.adapter.model.Merchant;
+import com.sanedge.common.adapter.model.Product;
+import com.sanedge.common.adapter.model.OrderItem;
+import com.sanedge.common.adapter.order_item.OrderItemCommandPort;
+import com.sanedge.common.adapter.product.ProductCommandPort;
+import com.sanedge.common.adapter.product.ProductQueryPort;
 
 @ExtendWith(MockitoExtension.class)
 class OrderCommandServiceImplTest {
@@ -66,28 +67,23 @@ class OrderCommandServiceImplTest {
     private TracingMetrics tracingMetrics;
 
     @Mock
-    private MutinyMerchantQueryServiceStub merchantQueryService;
+    private MerchantQueryPort merchantQueryPort;
     @Mock
-    private MutinyCashierServiceStub cashierQueryService;
+    private CashierQueryPort cashierQueryPort;
     @Mock
-    private MutinyProductServiceStub productQueryService;
+    private ProductQueryPort productQueryPort;
     @Mock
-    private MutinyProductCommandServiceStub productCommandService;
+    private ProductCommandPort productCommandPort;
     @Mock
-    private MutinyOrderItemCommandServiceStub orderItemCommandService;
+    private OrderItemCommandPort orderItemCommandPort;
 
     private OrderCommandServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new OrderCommandServiceImpl(orderQueryRepo, orderCommandRepo, outboxRepository, validator, redisService,
-                tracingMetrics);
-        // inject gRPC stubs (field injection)
-        service.merchantQueryService = merchantQueryService;
-        service.cashierQueryService = cashierQueryService;
-        service.productQueryService = productQueryService;
-        service.productCommandService = productCommandService;
-        service.orderItemCommandService = orderItemCommandService;
+                tracingMetrics, merchantQueryPort, cashierQueryPort, productQueryPort, productCommandPort,
+                orderItemCommandPort);
 
         // Lenient stubs for traceAndMeasure
         lenient().doAnswer(invocation -> {
@@ -99,32 +95,21 @@ class OrderCommandServiceImplTest {
         lenient().when(orderCommandRepo.deleteAllDeleted()).thenReturn(Uni.createFrom().item(true));
         lenient().when(orderCommandRepo.restoreAllDeleted()).thenReturn(Uni.createFrom().item(true));
 
-        // common gRPC stubs for create/update
-        lenient().when(merchantQueryService.findByIdMerchant(any()))
-                .thenReturn(Uni.createFrom().item(Merchant.ApiResponseMerchant.newBuilder()
-                        .setStatus("success")
-                        .setData(Merchant.MerchantResponse.newBuilder().setId(10).build())
-                        .build()));
-        lenient().when(cashierQueryService.findById(any()))
-                .thenReturn(Uni.createFrom().item(pb.cashier.Cashier.ApiResponseCashier.newBuilder()
-                        .setStatus("success")
-                        .setData(pb.cashier.Cashier.CashierResponse.newBuilder().setId(100).build())
-                        .build()));
-        lenient().when(productQueryService.findById(any()))
-                .thenReturn(Uni.createFrom().item(pb.product.Product.ApiResponseProduct.newBuilder()
-                        .setStatus("success")
-                        .setData(Product.ProductResponse.newBuilder().setId(1).setCountInStock(100).setPrice(5000)
-                                .build())
-                        .build()));
-        lenient().when(productCommandService.update(any()))
-                .thenReturn(Uni.createFrom().item(pb.product.Product.ApiResponseProduct.newBuilder()
-                        .setStatus("success").build()));
-        lenient().when(orderItemCommandService.createOrderItem(any()))
-                .thenReturn(Uni.createFrom().item(pb.order_item.OrderItem.ApiResponseOrderItem.newBuilder()
-                        .setStatus("success").build()));
-        lenient().when(orderItemCommandService.updateOrderItem(any()))
-                .thenReturn(Uni.createFrom().item(pb.order_item.OrderItem.ApiResponseOrderItem.newBuilder()
-                        .setStatus("success").build()));
+        // common port stubs for create/update
+        lenient().when(merchantQueryPort.findByMerchantId(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Merchant(10, "", "", "", 100, null, null)));
+        lenient().when(cashierQueryPort.findById(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Cashier(100, 10, "", null, null)));
+        lenient().when(productQueryPort.findById(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Product(1, 10, 1, "name", "desc", 5000, 100, "brand", 1, 0.0f,
+                        "slug", "img", "barcode", null, null)));
+        lenient().when(productCommandPort.update(any()))
+                .thenReturn(Uni.createFrom().item(new Product(1, 10, 1, "name", "desc", 5000, 98, "brand", 1, 0.0f,
+                        "slug", "img", "barcode", null, null)));
+        lenient().when(orderItemCommandPort.createOrderItem(any()))
+                .thenReturn(Uni.createFrom().item(new OrderItem(1, 1, 1, 2, 5000, null, null)));
+        lenient().when(orderItemCommandPort.updateOrderItem(any()))
+                .thenReturn(Uni.createFrom().item(new OrderItem(1, 1, 1, 2, 5000, null, null)));
     }
 
     private Order createMockOrder(Long id) {
@@ -167,9 +152,8 @@ class OrderCommandServiceImplTest {
 
         @Test
         void merchantNotFound_returnsError() {
-            when(merchantQueryService.findByIdMerchant(any()))
-                    .thenReturn(Uni.createFrom().item(Merchant.ApiResponseMerchant.newBuilder()
-                            .setStatus("error").build()));
+            when(merchantQueryPort.findByMerchantId(anyInt()))
+                    .thenReturn(Uni.createFrom().failure(new ResourceNotFoundException("Merchant not found")));
 
             CreateOrderRequest req = new CreateOrderRequest();
             req.setMerchantId(10);

@@ -6,13 +6,11 @@ metadata:
   finalizers:
   - resources-finalizer.argocd.argoproj.io
 spec:
-  description: Point of Sale modular monolith project
+  description: Point-of-Sale modular monolith project
   sourceRepos:
   - '*'
   destinations:
-  - namespace: pos
-    server: https://kubernetes.default.svc
-  - namespace: pointofsale
+  - namespace: point-of-sale
     server: https://kubernetes.default.svc
   - namespace: argocd
     server: https://kubernetes.default.svc

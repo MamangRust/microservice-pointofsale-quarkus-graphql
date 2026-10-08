@@ -19,7 +19,7 @@ import lombok.AllArgsConstructor;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@Table(name = "user_roles", schema = "pos_identity")
+@Table(name = "user_roles")
 @IdClass(UserRoleId.class)
 public class UserRole extends PanacheEntityBase implements Serializable {
     @Id

@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 @Entity
-@Table(name = "roles", schema = "pos_identity")
+@Table(name = "roles")
 public class Role extends BaseModel {
     @NotBlank
     @Size(max = 50)

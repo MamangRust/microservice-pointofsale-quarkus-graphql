@@ -21,8 +21,9 @@ import com.sanedge.cashier.repository.CashierCommandRepository;
 import com.sanedge.cashier.repository.CashierQueryRepository;
 import com.sanedge.cashier.service.CashierCommandService;
 
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.user.UserQueryPort;
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -37,22 +38,22 @@ public class CashierCommandServiceImpl implements CashierCommandService {
         CashierQueryRepository cashierQueryRepository;
         RedisService redisService;
         TracingMetrics tracingMetrics;
-
-        @GrpcClient("merchant")
-        pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub merchantQueryService;
-
-        @GrpcClient("user")
-        pb.user.MutinyUserQueryServiceGrpc.MutinyUserQueryServiceStub userQueryService;
+        private final MerchantQueryPort merchantQueryPort;
+        private final UserQueryPort userQueryPort;
 
         @Inject
         public CashierCommandServiceImpl(CashierCommandRepository cashierCommandRepository,
                         CashierQueryRepository cashierQueryRepository,
                         RedisService redisService,
-                        TracingMetrics tracingMetrics) {
+                        TracingMetrics tracingMetrics,
+                        MerchantQueryPort merchantQueryPort,
+                        UserQueryPort userQueryPort) {
                 this.cashierCommandRepository = cashierCommandRepository;
                 this.cashierQueryRepository = cashierQueryRepository;
                 this.redisService = redisService;
                 this.tracingMetrics = tracingMetrics;
+                this.merchantQueryPort = merchantQueryPort;
+                this.userQueryPort = userQueryPort;
         }
 
         @Override
@@ -66,32 +67,8 @@ public class CashierCommandServiceImpl implements CashierCommandService {
                         logger.info("Creating cashier for merchantId={}, userId={}, name={}", req.getMerchantId(),
                                         req.getUserId(), req.getName());
 
-                        return merchantQueryService
-                                        .findByIdMerchant(pb.merchant.Merchant.FindByIdMerchantRequest.newBuilder()
-                                                        .setMerchantId(req.getMerchantId())
-                                                        .build())
-                                        .chain(matchedResponse -> {
-                                                if ("success".equals(matchedResponse.getStatus())
-                                                                && matchedResponse.hasData()) {
-                                                        return Uni.createFrom().item(matchedResponse.getData());
-                                                } else {
-                                                        return Uni.createFrom().failure(new ResourceNotFoundException(
-                                                                        "Merchant not found"));
-                                                }
-                                        })
-                                        .chain(merchant -> userQueryService
-                                                        .findById(pb.user.User.FindByIdUserRequest.newBuilder()
-                                                                        .setId(req.getUserId().intValue())
-                                                                        .build()))
-                                        .chain(matchedUserResponse -> {
-                                                if ("success".equals(matchedUserResponse.getStatus())
-                                                                && matchedUserResponse.hasData()) {
-                                                        return Uni.createFrom().item(matchedUserResponse.getData());
-                                                } else {
-                                                        return Uni.createFrom().failure(new ResourceNotFoundException(
-                                                                        "User not found"));
-                                                }
-                                        })
+                        return merchantQueryPort.findByMerchantId(req.getMerchantId())
+                                        .chain(merchant -> userQueryPort.findById(req.getUserId().intValue()))
                                         .chain(user -> cashierQueryRepository.findByNameAndMerchantId(req.getName(),
                                                         req.getMerchantId().longValue()))
                                         .chain(existingCashier -> {

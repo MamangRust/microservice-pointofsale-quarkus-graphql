@@ -12,7 +12,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sanedge.common.config.RedisService;
 import com.sanedge.common.domain.response.ApiResponse;
-import com.sanedge.common.domain.response.PagedResult;
+import com.sanedge.common.domain.response.ApiResponsePagination;
+import com.sanedge.common.domain.response.PaginationMeta;
 import com.sanedge.common.observability.TracingMetrics;
 import com.sanedge.order_item.domain.requests.FindAllOrderItems;
 import com.sanedge.order_item.domain.response.OrderItemResponse;
@@ -68,7 +69,7 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
 
     @Override
     @WithTransaction
-    public Uni<ApiResponse<PagedResult<OrderItemResponse>>> findAll(FindAllOrderItems request) {
+    public Uni<ApiResponsePagination<List<OrderItemResponse>>> findAll(FindAllOrderItems request) {
         String search = request.getSearch();
         int page = request.getPage();
         int pageSize = request.getPageSize();
@@ -85,9 +86,9 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                         .chain(cachedJson -> {
                             if (cachedJson != null) {
                                 logger.info("Cache HIT for key: {}", cacheKey);
-                                ApiResponse<PagedResult<OrderItemResponse>> cached = fromJson(
+                                ApiResponsePagination<List<OrderItemResponse>> cached = fromJson(
                                         cachedJson,
-                                        new TypeReference<ApiResponse<PagedResult<OrderItemResponse>>>() {
+                                        new TypeReference<ApiResponsePagination<List<OrderItemResponse>>>() {
                                         });
                                 return Uni.createFrom().item(cached);
                             }
@@ -98,9 +99,10 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                                         List<OrderItemResponse> responses = pagedResult.getData().stream()
                                                 .map(OrderItemResponse::from)
                                                 .collect(Collectors.toList());
-                                        PagedResult<OrderItemResponse> result = new PagedResult<>(responses,
+                                        PaginationMeta pagination = buildPagination(page, pageSize,
                                                 pagedResult.getTotalRecords());
-                                        return ApiResponse.success("Order items retrieved successfully", result);
+                                        return new ApiResponsePagination<>("success",
+                                                "Order items retrieved successfully", responses, pagination);
                                     })
                                     .chain(res -> redisService
                                             .setWithExpirationReactive(cacheKey, toJson(res), CACHE_TTL_SECONDS)
@@ -108,13 +110,14 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                         })
                         .onFailure().recoverWithItem(e -> {
                             logger.error("Failed to query all order items: {}", e.getMessage(), e);
-                            return new ApiResponse<>("error", "Failed to fetch order items: " + e.getMessage(), null);
+                            return new ApiResponsePagination<List<OrderItemResponse>>("error",
+                                    "Failed to fetch order items: " + e.getMessage(), null, null);
                         }));
     }
 
     @Override
     @WithTransaction
-    public Uni<ApiResponse<PagedResult<OrderItemResponseDeleteAt>>> findByActive(FindAllOrderItems request) {
+    public Uni<ApiResponsePagination<List<OrderItemResponseDeleteAt>>> findByActive(FindAllOrderItems request) {
         String search = request.getSearch();
         int page = request.getPage();
         int pageSize = request.getPageSize();
@@ -131,9 +134,9 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                         .chain(cachedJson -> {
                             if (cachedJson != null) {
                                 logger.info("Cache HIT for key: {}", cacheKey);
-                                ApiResponse<PagedResult<OrderItemResponseDeleteAt>> cached = fromJson(
+                                ApiResponsePagination<List<OrderItemResponseDeleteAt>> cached = fromJson(
                                         cachedJson,
-                                        new TypeReference<ApiResponse<PagedResult<OrderItemResponseDeleteAt>>>() {
+                                        new TypeReference<ApiResponsePagination<List<OrderItemResponseDeleteAt>>>() {
                                         });
                                 return Uni.createFrom().item(cached);
                             }
@@ -144,10 +147,10 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                                         List<OrderItemResponseDeleteAt> responses = pagedResult.getData().stream()
                                                 .map(OrderItemResponseDeleteAt::from)
                                                 .collect(Collectors.toList());
-                                        PagedResult<OrderItemResponseDeleteAt> cleanResult = new PagedResult<>(
-                                                responses, pagedResult.getTotalRecords());
-                                        return ApiResponse.success("Active order items retrieved successfully",
-                                                cleanResult);
+                                        PaginationMeta pagination = buildPagination(page, pageSize,
+                                                pagedResult.getTotalRecords());
+                                        return new ApiResponsePagination<>("success",
+                                                "Active order items retrieved successfully", responses, pagination);
                                     })
                                     .chain(res -> redisService
                                             .setWithExpirationReactive(cacheKey, toJson(res), CACHE_TTL_SECONDS)
@@ -155,14 +158,14 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                         })
                         .onFailure().recoverWithItem(e -> {
                             logger.error("Failed to query active order items: {}", e.getMessage(), e);
-                            return new ApiResponse<>("error", "Failed to fetch active order items: " + e.getMessage(),
-                                    null);
+                            return new ApiResponsePagination<List<OrderItemResponseDeleteAt>>("error",
+                                    "Failed to fetch active order items: " + e.getMessage(), null, null);
                         }));
     }
 
     @Override
     @WithTransaction
-    public Uni<ApiResponse<PagedResult<OrderItemResponseDeleteAt>>> findByTrashed(FindAllOrderItems request) {
+    public Uni<ApiResponsePagination<List<OrderItemResponseDeleteAt>>> findByTrashed(FindAllOrderItems request) {
         String search = request.getSearch();
         int page = request.getPage();
         int pageSize = request.getPageSize();
@@ -179,9 +182,9 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                         .chain(cachedJson -> {
                             if (cachedJson != null) {
                                 logger.info("Cache HIT for key: {}", cacheKey);
-                                ApiResponse<PagedResult<OrderItemResponseDeleteAt>> cached = fromJson(
+                                ApiResponsePagination<List<OrderItemResponseDeleteAt>> cached = fromJson(
                                         cachedJson,
-                                        new TypeReference<ApiResponse<PagedResult<OrderItemResponseDeleteAt>>>() {
+                                        new TypeReference<ApiResponsePagination<List<OrderItemResponseDeleteAt>>>() {
                                         });
                                 return Uni.createFrom().item(cached);
                             }
@@ -192,10 +195,10 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                                         List<OrderItemResponseDeleteAt> responses = pagedResult.getData().stream()
                                                 .map(OrderItemResponseDeleteAt::from)
                                                 .collect(Collectors.toList());
-                                        PagedResult<OrderItemResponseDeleteAt> cleanResult = new PagedResult<>(
-                                                responses, pagedResult.getTotalRecords());
-                                        return ApiResponse.success("Trashed order items retrieved successfully",
-                                                cleanResult);
+                                        PaginationMeta pagination = buildPagination(page, pageSize,
+                                                pagedResult.getTotalRecords());
+                                        return new ApiResponsePagination<>("success",
+                                                "Trashed order items retrieved successfully", responses, pagination);
                                     })
                                     .chain(res -> redisService
                                             .setWithExpirationReactive(cacheKey, toJson(res), CACHE_TTL_SECONDS)
@@ -203,8 +206,8 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                         })
                         .onFailure().recoverWithItem(e -> {
                             logger.error("Failed to query trashed order items: {}", e.getMessage(), e);
-                            return new ApiResponse<>("error", "Failed to fetch trashed order items: " + e.getMessage(),
-                                    null);
+                            return new ApiResponsePagination<List<OrderItemResponseDeleteAt>>("error",
+                                    "Failed to fetch trashed order items: " + e.getMessage(), null, null);
                         }));
     }
 
@@ -246,6 +249,12 @@ public class OrderItemQueryServiceImpl implements OrderItemQueryService {
                             logger.error("Failed to query order items by order ID={}: {}", orderId, e.getMessage(), e);
                             return new ApiResponse<>("error", "Failed to fetch order items: " + e.getMessage(), null);
                         }));
+    }
+
+    private PaginationMeta buildPagination(int page, int pageSize, int totalRecords) {
+        int size = pageSize > 0 ? pageSize : 1;
+        int totalPages = (int) Math.ceil((double) totalRecords / size);
+        return new PaginationMeta(page, size, totalPages, totalRecords);
     }
 
     private <T> Uni<T> runTraced(String operationName, String method, Attributes attributes,

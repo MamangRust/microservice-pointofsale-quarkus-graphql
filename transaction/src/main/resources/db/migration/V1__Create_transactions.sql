@@ -1,7 +1,9 @@
-CREATE TABLE IF NOT EXISTS "pos_transaction"."transactions" (
-    "transaction_id" BIGINT NOT NULL DEFAULT nextval('pos_transaction.transactions_seq') PRIMARY KEY,
-    "order_id" BIGINT NOT NULL REFERENCES "pos_order"."orders" ("order_id") ON DELETE CASCADE,
-    "merchant_id" BIGINT NOT NULL REFERENCES "pos_merchant"."merchants" ("merchant_id") ON DELETE CASCADE,
+CREATE SEQUENCE IF NOT EXISTS "transactions_seq";
+
+CREATE TABLE IF NOT EXISTS "transactions" (
+    "transaction_id" BIGINT NOT NULL DEFAULT nextval('transactions_seq') PRIMARY KEY,
+    "order_id" BIGINT NOT NULL REFERENCES "orders" ("order_id") ON DELETE CASCADE,
+    "merchant_id" BIGINT NOT NULL,
     "payment_method" VARCHAR(50) NOT NULL,
     "amount" INT NOT NULL,
     "change_amount" INT DEFAULT 0,
@@ -12,6 +14,6 @@ CREATE TABLE IF NOT EXISTS "pos_transaction"."transactions" (
 );
 
 
-CREATE INDEX IF NOT EXISTS "idx_transactions_order_id" ON "pos_transaction"."transactions" ("order_id");
-CREATE INDEX IF NOT EXISTS "idx_transactions_merchant_id" ON "pos_transaction"."transactions" ("merchant_id");
-CREATE INDEX IF NOT EXISTS "idx_transactions_status" ON "pos_transaction"."transactions" ("status");
+CREATE INDEX IF NOT EXISTS "idx_transactions_order_id" ON "transactions" ("order_id");
+CREATE INDEX IF NOT EXISTS "idx_transactions_merchant_id" ON "transactions" ("merchant_id");
+CREATE INDEX IF NOT EXISTS "idx_transactions_status" ON "transactions" ("status");

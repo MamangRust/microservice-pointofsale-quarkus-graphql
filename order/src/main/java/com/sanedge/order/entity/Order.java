@@ -14,7 +14,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Entity
 @EqualsAndHashCode(callSuper = true)
-@Table(name = "orders", schema = "pos_order")
+@Table(name = "orders")
 @AttributeOverride(name = "id", column = @Column(name = "order_id"))
 public class Order extends BaseModel {
 

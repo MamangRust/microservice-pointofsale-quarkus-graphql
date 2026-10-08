@@ -10,4 +10,5 @@ RUN --mount=type=cache,target=/root/.m2 mvn clean package -pl stats-writer -am -
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/stats-writer/target/quarkus-app/ ./
+EXPOSE 8095
 ENTRYPOINT ["java", "-jar", "quarkus-run.jar"]

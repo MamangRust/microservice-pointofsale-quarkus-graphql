@@ -2,6 +2,7 @@ package com.sanedge.auth.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -27,45 +28,39 @@ import com.sanedge.auth.entity.ResetToken;
 import com.sanedge.auth.repository.OutboxRepository;
 import com.sanedge.auth.repository.RefreshTokenRepository;
 import com.sanedge.auth.repository.ResetTokenRepository;
+import com.sanedge.common.adapter.model.CreateUserCmd;
+import com.sanedge.common.adapter.model.Role;
+import com.sanedge.common.adapter.model.UpdateUserCmd;
+import com.sanedge.common.adapter.model.User;
+import com.sanedge.common.adapter.model.VerifyPasswordResult;
+import com.sanedge.common.adapter.role.RoleCommandPort;
+import com.sanedge.common.adapter.role.RoleQueryPort;
+import com.sanedge.common.adapter.user.UserCommandPort;
+import com.sanedge.common.adapter.user.UserQueryPort;
 import com.sanedge.common.config.RedisService;
+import com.sanedge.common.exception.ResourceNotFoundException;
 import com.sanedge.common.observability.TracingMetrics;
 import com.sanedge.common.utils.JwtUtil;
 import com.sanedge.common.utils.PasswordUtil;
 
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
-import pb.role.Role.ApiResponseRole;
-import pb.role.Role.RoleResponse;
-import pb.role.RoleCommand.AssignRoleToUserRequest;
-import pb.role.RoleCommandService;
-import pb.role.RoleQuery.FindByNameRoleRequest;
-import pb.role.RoleService;
-import pb.user.User.FindAllUserRequest;
-import pb.user.User.FindByIdUserRequest;
 import pb.user.User.UserResponse;
-import pb.user.UserCommand.CreateUserRequest;
-import pb.user.UserCommand.UpdateUserRequest;
-import pb.user.UserCommand.VerifyPasswordRequest;
-import pb.user.UserCommand.VerifyPasswordResponse;
-import pb.user.UserCommandService;
-import pb.user.UserQueryService;
-import pb.user.UserQuery.ApiResponsePaginationUser;
-import pb.user.User.ApiResponseUser;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
     @Mock
-    UserQueryService userQueryService;
+    UserQueryPort userQueryPort;
 
     @Mock
-    UserCommandService userCommandService;
+    UserCommandPort userCommandPort;
 
     @Mock
-    RoleService roleService;
+    RoleQueryPort roleQueryPort;
 
     @Mock
-    RoleCommandService roleCommandService;
+    RoleCommandPort roleCommandPort;
 
     @Mock
     RefreshTokenRepository refreshTokenRepository;
@@ -92,7 +87,6 @@ class AuthServiceTest {
     AuthService authServiceUnderTest;
 
     private RegisterRequest registerReq;
-    private UserResponse userResponse;
 
     @BeforeEach
     void setUp() {
@@ -102,22 +96,11 @@ class AuthServiceTest {
         registerReq.setEmail("john@example.com");
         registerReq.setPassword("SecurePass123!");
 
-        userResponse = UserResponse.newBuilder()
-                .setId(1)
-                .setFirstname("John")
-                .setLastname("Doe")
-                .setEmail("john@example.com")
-                .build();
-
-        // Production AuthService calls BOTH the 3-arg (name, op, supplier) and
-        // the 4-arg (name, op, attributes, supplier) overloads of traceAndMeasure.
-        // Stub both so the Supplier is invoked and returns its Uni, instead of
-        // Mockito's default null Uni (which would cause NPE on .await()).
+        // Production AuthService calls the 4-arg (name, op, attributes, supplier)
+        // overload of traceAndMeasure. Stub it so the Supplier is invoked and
+        // returns its Uni, instead of Mockito's default null Uni (NPE on .await()).
         lenient().doAnswer(invokeSupplier())
-                .when(tracingMetrics).traceAndMeasure(anyString(), anyString(), any());
-        lenient().doAnswer(invokeSupplier())
-                .when(tracingMetrics)
-                .traceAndMeasure(anyString(), anyString(), any(Attributes.class), any());
+                .when(tracingMetrics).traceAndMeasure(anyString(), anyString(), any(Attributes.class), any());
 
         lenient().when(redisService.existsReactive(anyString())).thenReturn(Uni.createFrom().item(false));
         lenient().when(redisService.getReactive(anyString())).thenReturn(Uni.createFrom().nullItem());
@@ -138,40 +121,24 @@ class AuthServiceTest {
         lenient().when(passwordUtil.hashPassword(anyString())).thenReturn("hashed-password");
     }
 
+    private static User john() {
+        return new User(1, "John", "Doe", "john@example.com", null, null);
+    }
+
     @Test
     void registerUser_shouldSucceed() {
-        ApiResponsePaginationUser findAllResp = ApiResponsePaginationUser.newBuilder()
-                .setStatus("success")
-                .build();
-        when(userQueryService.findAll(any(FindAllUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findAllResp));
-
-        ApiResponseUser createResp = ApiResponseUser.newBuilder()
-                .setStatus("success")
-                .setData(userResponse)
-                .build();
-        when(userCommandService.create(any(CreateUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(createResp));
-
-        ApiResponseRole roleResp = ApiResponseRole.newBuilder()
-                .setData(RoleResponse.newBuilder().setId(1).build())
-                .build();
-        when(roleService.findByNameRole(any(FindByNameRoleRequest.class)))
-                .thenReturn(Uni.createFrom().item(roleResp));
-
-        pb.role.RoleCommand.ApiResponseUserRole assignResp = pb.role.RoleCommand.ApiResponseUserRole.newBuilder()
-                .setStatus("success")
-                .build();
-        when(roleCommandService.assignRoleToUser(any(AssignRoleToUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(assignResp));
+        when(userQueryPort.findByEmail("john@example.com")).thenReturn(Uni.createFrom().nullItem());
+        when(userCommandPort.create(any(CreateUserCmd.class))).thenReturn(Uni.createFrom().item(john()));
+        when(roleQueryPort.findByName("ROLE_USER")).thenReturn(Uni.createFrom().item(new Role(1, "ROLE_USER", null, null)));
+        when(roleCommandPort.assignRoleToUser(1, 1)).thenReturn(Uni.createFrom().voidItem());
 
         UserResponse result = authServiceUnderTest.register(registerReq).await().indefinitely();
 
         assertThat(result).isNotNull();
         assertThat(result.getEmail()).isEqualTo("john@example.com");
         assertThat(result.getFirstname()).isEqualTo("John");
-        verify(userQueryService).findAll(any(FindAllUserRequest.class));
-        verify(userCommandService).create(any(CreateUserRequest.class));
+        verify(userQueryPort).findByEmail("john@example.com");
+        verify(userCommandPort).create(any(CreateUserCmd.class));
         ArgumentCaptor<Outbox> outboxCaptor = ArgumentCaptor.forClass(Outbox.class);
         verify(outboxRepository).persist(outboxCaptor.capture());
         Outbox captured = outboxCaptor.getValue();
@@ -182,12 +149,7 @@ class AuthServiceTest {
 
     @Test
     void registerUser_shouldFail_whenEmailAlreadyExists() {
-        ApiResponsePaginationUser findAllResp = ApiResponsePaginationUser.newBuilder()
-                .setStatus("success")
-                .addData(userResponse)
-                .build();
-        when(userQueryService.findAll(any(FindAllUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findAllResp));
+        when(userQueryPort.findByEmail("john@example.com")).thenReturn(Uni.createFrom().item(john()));
 
         try {
             authServiceUnderTest.register(registerReq).await().indefinitely();
@@ -198,12 +160,8 @@ class AuthServiceTest {
 
     @Test
     void login_shouldSucceed() {
-        VerifyPasswordResponse verifyResp = VerifyPasswordResponse.newBuilder()
-                .setValid(true)
-                .setUser(userResponse)
-                .build();
-        when(userCommandService.verifyPassword(any(VerifyPasswordRequest.class)))
-                .thenReturn(Uni.createFrom().item(verifyResp));
+        when(userQueryPort.verifyPassword("john@example.com", "SecurePass123!"))
+                .thenReturn(Uni.createFrom().item(new VerifyPasswordResult(true, john(), null)));
 
         lenient().when(refreshTokenRepository.deleteByUserId(1L)).thenReturn(Uni.createFrom().item(1L));
         lenient().when(refreshTokenRepository.persist(any(RefreshToken.class)))
@@ -230,11 +188,8 @@ class AuthServiceTest {
 
     @Test
     void login_shouldFail_withInvalidCredentials() {
-        VerifyPasswordResponse verifyResp = VerifyPasswordResponse.newBuilder()
-                .setValid(false)
-                .build();
-        when(userCommandService.verifyPassword(any(VerifyPasswordRequest.class)))
-                .thenReturn(Uni.createFrom().item(verifyResp));
+        when(userQueryPort.verifyPassword(anyString(), anyString()))
+                .thenReturn(Uni.createFrom().item(new VerifyPasswordResult(false, null, null)));
 
         try {
             authServiceUnderTest.login("john@example.com", "wrong").await().indefinitely();
@@ -255,12 +210,7 @@ class AuthServiceTest {
         when(refreshTokenRepository.persist(any(RefreshToken.class)))
                 .thenAnswer(inv -> Uni.createFrom().item((RefreshToken) inv.getArgument(0)));
 
-        ApiResponseUser findByIdResp = ApiResponseUser.newBuilder()
-                .setStatus("success")
-                .setData(userResponse)
-                .build();
-        when(userQueryService.findById(any(FindByIdUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findByIdResp));
+        when(userQueryPort.findById(1)).thenReturn(Uni.createFrom().item(john()));
 
         String[] tokens = authServiceUnderTest.refresh("old-refresh-token").await().indefinitely();
 
@@ -294,12 +244,7 @@ class AuthServiceTest {
 
     @Test
     void forgotPassword_shouldSucceed() {
-        ApiResponsePaginationUser findAllResp = ApiResponsePaginationUser.newBuilder()
-                .setStatus("success")
-                .addData(userResponse)
-                .build();
-        when(userQueryService.findAll(any(FindAllUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findAllResp));
+        when(userQueryPort.findByEmail("john@example.com")).thenReturn(Uni.createFrom().item(john()));
 
         lenient().when(resetTokenRepository.deleteByUserId(1L)).thenReturn(Uni.createFrom().item(1L));
         lenient().when(resetTokenRepository.persist(any(ResetToken.class)))
@@ -316,11 +261,7 @@ class AuthServiceTest {
 
     @Test
     void forgotPassword_shouldFail_whenUserNotFound() {
-        ApiResponsePaginationUser findAllResp = ApiResponsePaginationUser.newBuilder()
-                .setStatus("success")
-                .build();
-        when(userQueryService.findAll(any(FindAllUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findAllResp));
+        when(userQueryPort.findByEmail("unknown@example.com")).thenReturn(Uni.createFrom().nullItem());
 
         try {
             authServiceUnderTest.forgotPassword("unknown@example.com").await().indefinitely();
@@ -339,18 +280,9 @@ class AuthServiceTest {
         when(resetTokenRepository.findByToken("valid-reset-token"))
                 .thenReturn(Uni.createFrom().item(resetToken));
 
-        ApiResponseUser findByIdResp = ApiResponseUser.newBuilder()
-                .setStatus("success")
-                .setData(userResponse)
-                .build();
-        when(userQueryService.findById(any(FindByIdUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findByIdResp));
+        when(userQueryPort.findById(1)).thenReturn(Uni.createFrom().item(john()));
 
-        ApiResponseUser updateResp = ApiResponseUser.newBuilder()
-                .setStatus("success")
-                .build();
-        when(userCommandService.update(any(UpdateUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(updateResp));
+        when(userCommandPort.update(any(UpdateUserCmd.class))).thenReturn(Uni.createFrom().item(john()));
 
         lenient().when(resetTokenRepository.delete(any(ResetToken.class)))
                 .thenReturn(Uni.createFrom().voidItem());
@@ -362,7 +294,7 @@ class AuthServiceTest {
 
         authServiceUnderTest.resetPassword(req).await().indefinitely();
 
-        verify(userCommandService).update(any(UpdateUserRequest.class));
+        verify(userCommandPort).update(any(UpdateUserCmd.class));
     }
 
     @Test
@@ -413,12 +345,7 @@ class AuthServiceTest {
 
     @Test
     void getMe_shouldReturnUser() {
-        ApiResponseUser findByIdResp = ApiResponseUser.newBuilder()
-                .setStatus("success")
-                .setData(userResponse)
-                .build();
-        when(userQueryService.findById(any(FindByIdUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findByIdResp));
+        when(userQueryPort.findById(1)).thenReturn(Uni.createFrom().item(john()));
 
         UserResponse result = authServiceUnderTest.getMe(1L).await().indefinitely();
 
@@ -429,11 +356,8 @@ class AuthServiceTest {
 
     @Test
     void getMe_shouldFail_whenUserNotFound() {
-        ApiResponseUser findByIdResp = ApiResponseUser.newBuilder()
-                .setStatus("error")
-                .build();
-        when(userQueryService.findById(any(FindByIdUserRequest.class)))
-                .thenReturn(Uni.createFrom().item(findByIdResp));
+        when(userQueryPort.findById(999)).thenReturn(
+                Uni.createFrom().failure(new ResourceNotFoundException("not found")));
 
         try {
             authServiceUnderTest.getMe(999L).await().indefinitely();
@@ -465,10 +389,8 @@ class AuthServiceTest {
     }
 
     /**
-     * Finds the Supplier argument in the invocation regardless of whether it was
-     * passed positionally in the 3-arg overload (arg index 2) or 4-arg overload
-     * (arg index 3), then invokes it and returns the resulting Uni. This lets
-     * a single Answer<?> body serve both traceAndMeasure overloads.
+     * Finds the Supplier argument in the invocation (the 4-arg overload, arg
+     * index 3), then invokes it and returns the resulting Uni.
      */
     private Answer<Uni<?>> invokeSupplier() {
         return invocation -> {

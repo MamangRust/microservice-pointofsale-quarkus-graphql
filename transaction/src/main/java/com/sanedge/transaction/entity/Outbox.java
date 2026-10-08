@@ -15,7 +15,7 @@ import lombok.Data;
 
 @Data
 @Entity
-@Table(name = "outbox", schema = "pos_order")
+@Table(name = "outbox")
 public class Outbox {
 
     @Id

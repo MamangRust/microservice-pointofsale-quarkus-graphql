@@ -1,7 +1,9 @@
-CREATE TABLE IF NOT EXISTS "pos_catalog"."products" (
-    "product_id" BIGINT NOT NULL DEFAULT nextval('pos_catalog.products_seq') PRIMARY KEY,
-    "merchant_id" BIGINT NOT NULL REFERENCES "pos_merchant"."merchants" ("merchant_id") ON DELETE CASCADE,
-    "category_id" BIGINT NOT NULL REFERENCES "pos_catalog"."categories" ("category_id") ON DELETE CASCADE,
+CREATE SEQUENCE IF NOT EXISTS "products_seq";
+
+CREATE TABLE IF NOT EXISTS "products" (
+    "product_id" BIGINT NOT NULL DEFAULT nextval('products_seq') PRIMARY KEY,
+    "merchant_id" BIGINT NOT NULL,
+    "category_id" BIGINT NOT NULL REFERENCES "categories" ("category_id") ON DELETE CASCADE,
     "name" VARCHAR(255) NOT NULL,
     "description" TEXT,
     "price" INT NOT NULL,
@@ -17,6 +19,6 @@ CREATE TABLE IF NOT EXISTS "pos_catalog"."products" (
 );
 
 
-CREATE INDEX IF NOT EXISTS "idx_products_merchant_id" ON "pos_catalog"."products" ("merchant_id");
-CREATE INDEX IF NOT EXISTS "idx_products_category_id" ON "pos_catalog"."products" ("category_id");
-CREATE INDEX IF NOT EXISTS "idx_products_slug" ON "pos_catalog"."products" ("slug_product");
+CREATE INDEX IF NOT EXISTS "idx_products_merchant_id" ON "products" ("merchant_id");
+CREATE INDEX IF NOT EXISTS "idx_products_category_id" ON "products" ("category_id");
+CREATE INDEX IF NOT EXISTS "idx_products_slug" ON "products" ("slug_product");

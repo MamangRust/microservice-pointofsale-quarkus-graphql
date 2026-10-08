@@ -31,6 +31,20 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/common/smallrye-common-process/2.15.0/smallrye-common-process-2.15.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-grpc-protoc-plugin/3.31.3/quarkus-grpc-protoc-plugin-3.31.3-shaded.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/github/javaparser/javaparser-core/3.28.0/javaparser-core-3.28.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-smallrye-fault-tolerance/3.31.3/quarkus-smallrye-fault-tolerance-3.31.3.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance/6.10.0/smallrye-fault-tolerance-6.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/eclipse/microprofile/fault-tolerance/microprofile-fault-tolerance-api/4.1.2/microprofile-fault-tolerance-api-4.1.2.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance-api/6.10.0/smallrye-fault-tolerance-api-6.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance-core/6.10.0/smallrye-fault-tolerance-core-6.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance-autoconfig-core/6.10.0/smallrye-fault-tolerance-autoconfig-core-6.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance-apiimpl/6.10.0/smallrye-fault-tolerance-apiimpl-6.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/org/jboss/logging/commons-logging-jboss-logging/1.0.0.Final/commons-logging-jboss-logging-1.0.0.Final.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-smallrye-context-propagation/3.31.3/quarkus-smallrye-context-propagation-3.31.3.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-context-propagation/2.3.0/smallrye-context-propagation-2.3.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-context-propagation-api/2.3.0/smallrye-context-propagation-api-2.3.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-context-propagation-storage/2.3.0/smallrye-context-propagation-storage-2.3.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance-context-propagation/6.10.0/smallrye-fault-tolerance-context-propagation-6.10.0.jar" enabled="true" runInBatchMode="false"/>
+    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-fault-tolerance-mutiny/6.10.0/smallrye-fault-tolerance-mutiny-6.10.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-reactive-pg-client/3.31.3/quarkus-reactive-pg-client-3.31.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-reactive-datasource/3.31.3/quarkus-reactive-datasource-3.31.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-datasource/3.31.3/quarkus-datasource-3.31.3.jar" enabled="true" runInBatchMode="false"/>
@@ -114,10 +128,6 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/com/google/j2objc/j2objc-annotations/2.8/j2objc-annotations-2.8.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-mutiny/3.31.3/quarkus-mutiny-3.31.3.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-smallrye-context-propagation/3.31.3/quarkus-smallrye-context-propagation-3.31.3.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-context-propagation/2.3.0/smallrye-context-propagation-2.3.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-context-propagation-api/2.3.0/smallrye-context-propagation-api-2.3.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/smallrye-context-propagation-storage/2.3.0/smallrye-context-propagation-storage-2.3.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/reactive/mutiny-smallrye-context-propagation/3.1.0/mutiny-smallrye-context-propagation-3.1.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/common/smallrye-common-annotation/2.15.0/smallrye-common-annotation-2.15.0.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/smallrye/common/smallrye-common-vertx-context/2.15.0/smallrye-common-vertx-context-2.15.0.jar" enabled="true" runInBatchMode="false"/>
@@ -194,7 +204,6 @@
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/resteasy/reactive/resteasy-reactive/3.31.3/resteasy-reactive-3.31.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/vertx/utils/quarkus-vertx-utils/3.31.3/quarkus-vertx-utils-3.31.3.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/ws/rs/jakarta.ws.rs-api/3.1.0/jakarta.ws.rs-api-3.1.0.jar" enabled="true" runInBatchMode="false"/>
-    <factorypathentry kind="VARJAR" id="M2_REPO/org/jboss/logging/commons-logging-jboss-logging/1.0.0.Final/commons-logging-jboss-logging-1.0.0.Final.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/xml/bind/jakarta.xml.bind-api/4.0.5/jakarta.xml.bind-api-4.0.5.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/jakarta/activation/jakarta.activation-api/2.1.4/jakarta.activation-api-2.1.4.jar" enabled="true" runInBatchMode="false"/>
     <factorypathentry kind="VARJAR" id="M2_REPO/io/quarkus/quarkus-rest-jackson/3.31.3/quarkus-rest-jackson-3.31.3.jar" enabled="true" runInBatchMode="false"/>

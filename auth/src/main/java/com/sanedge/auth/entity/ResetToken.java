@@ -6,7 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "reset_tokens", schema = "pos_identity")
+@Table(name = "reset_tokens")
 public class ResetToken extends BaseModel {
     @Column(name = "user_id", nullable = false)
     private Long userId;

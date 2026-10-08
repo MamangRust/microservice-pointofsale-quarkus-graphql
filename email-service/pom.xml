@@ -67,6 +67,16 @@
             <artifactId>quarkus-arc</artifactId>
         </dependency>
 
+        <!-- Flyway + JDBC PostgreSQL: own the pos_email DB (consumer_inbox) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-flyway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>io.quarkus</groupId>

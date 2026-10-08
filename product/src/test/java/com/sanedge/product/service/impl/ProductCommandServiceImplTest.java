@@ -3,6 +3,7 @@ package com.sanedge.product.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -35,8 +36,11 @@ import com.sanedge.product.repository.ProductQueryRepository;
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
 import jakarta.validation.Validator;
-import pb.merchant.Merchant;
-import pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub;
+
+import com.sanedge.common.adapter.category.CategoryQueryPort;
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.model.Category;
+import com.sanedge.common.adapter.model.Merchant;
 
 @ExtendWith(MockitoExtension.class)
 class ProductCommandServiceImplTest {
@@ -52,16 +56,16 @@ class ProductCommandServiceImplTest {
     @Mock
     private TracingMetrics tracingMetrics;
     @Mock
-    private MutinyMerchantQueryServiceStub merchantQueryService;
+    private MerchantQueryPort merchantQueryPort;
+    @Mock
+    private CategoryQueryPort categoryQueryPort;
 
     private ProductCommandServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new ProductCommandServiceImpl(productCommandRepo, productQueryRepo, validator, redisService,
-                tracingMetrics);
-        // inject gRPC stub via field (it's field-injected in the service)
-        service.merchantQueryService = merchantQueryService;
+                tracingMetrics, merchantQueryPort, categoryQueryPort);
 
         // Lenient stub for traceAndMeasure
         lenient().doAnswer(invocation -> {
@@ -73,12 +77,11 @@ class ProductCommandServiceImplTest {
         lenient().when(productCommandRepo.deleteAllDeleted()).thenReturn(Uni.createFrom().item(true));
         lenient().when(productCommandRepo.restoreAllDeleted()).thenReturn(Uni.createFrom().item(true));
 
-        // common gRPC stub
-        lenient().when(merchantQueryService.findByIdMerchant(any()))
-                .thenReturn(Uni.createFrom().item(Merchant.ApiResponseMerchant.newBuilder()
-                        .setStatus("success")
-                        .setData(Merchant.MerchantResponse.newBuilder().setId(10).build())
-                        .build()));
+        // common port stubs
+        lenient().when(merchantQueryPort.findByMerchantId(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Merchant(10, "", "", "", 100, null, null)));
+        lenient().when(categoryQueryPort.findByCategoryId(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Category(1, "", "", "", "", null, null)));
     }
 
     private Product createMockProduct(Long id) {
@@ -182,9 +185,8 @@ class ProductCommandServiceImplTest {
 
         @Test
         void merchantNotFound_returnsError() {
-            lenient().when(merchantQueryService.findByIdMerchant(any()))
-                    .thenReturn(Uni.createFrom().item(Merchant.ApiResponseMerchant.newBuilder()
-                            .setStatus("error").build()));
+            lenient().when(merchantQueryPort.findByMerchantId(anyInt()))
+                    .thenReturn(Uni.createFrom().failure(new ResourceNotFoundException("Merchant not found")));
 
             UpdateProductRequest req = updateReq();
 

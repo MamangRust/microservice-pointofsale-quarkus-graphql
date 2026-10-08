@@ -11,12 +11,20 @@ import com.sanedge.auth.entity.ResetToken;
 import com.sanedge.auth.repository.OutboxRepository;
 import com.sanedge.auth.repository.RefreshTokenRepository;
 import com.sanedge.auth.repository.ResetTokenRepository;
+import com.sanedge.common.adapter.model.CreateUserCmd;
+import com.sanedge.common.adapter.model.Role;
+import com.sanedge.common.adapter.model.UpdateUserCmd;
+import com.sanedge.common.adapter.model.User;
+import com.sanedge.common.adapter.model.VerifyPasswordResult;
+import com.sanedge.common.adapter.role.RoleCommandPort;
+import com.sanedge.common.adapter.role.RoleQueryPort;
+import com.sanedge.common.adapter.user.UserCommandPort;
+import com.sanedge.common.adapter.user.UserQueryPort;
 import com.sanedge.common.config.RedisService;
 import com.sanedge.common.observability.TracingMetrics;
 import com.sanedge.common.utils.JwtUtil;
 import com.sanedge.common.utils.PasswordUtil;
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.json.JsonObject;
@@ -24,41 +32,26 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pb.role.RoleCommandService;
-import pb.role.RoleService;
-import pb.role.Role.ApiResponseRole;
-import pb.role.RoleCommand.AssignRoleToUserRequest;
-import pb.role.RoleQuery.FindByNameRoleRequest;
-import pb.user.UserQueryService;
-import pb.user.UserCommandService;
 import pb.user.User.UserResponse;
-import pb.user.User.FindAllUserRequest;
-import pb.user.User.FindByIdUserRequest;
+
 import com.sanedge.auth.domain.requests.RegisterRequest;
 import com.sanedge.auth.domain.requests.ResetPasswordRequest;
-import pb.user.UserCommand.CreateUserRequest;
-import pb.user.UserCommand.UpdateUserRequest;
-import pb.user.UserCommand.VerifyPasswordRequest;
 
 @ApplicationScoped
 public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     @Inject
-    @GrpcClient("user")
-    UserQueryService userQueryService;
+    UserQueryPort userQueryPort;
 
     @Inject
-    @GrpcClient("user")
-    UserCommandService userCommandService;
+    UserCommandPort userCommandPort;
 
     @Inject
-    @GrpcClient("role")
-    RoleService roleService;
+    RoleQueryPort roleQueryPort;
 
     @Inject
-    @GrpcClient("role")
-    RoleCommandService roleCommandService;
+    RoleCommandPort roleCommandPort;
 
     @Inject
     RefreshTokenRepository refreshTokenRepository;
@@ -89,65 +82,37 @@ public class AuthService {
 
         return runTraced("registerUser", "register", attrs, () -> {
             log.info("Attempting to register user with email: {}", req.getEmail());
-            return userQueryService
-                    .findAll(FindAllUserRequest.newBuilder().setSearch(req.getEmail()).setPage(1).setPageSize(1).build())
-                    .chain(findAllResponse -> {
-                        if (findAllResponse.getDataCount() > 0) {
-                            for (UserResponse u : findAllResponse.getDataList()) {
-                                if (u.getEmail().equalsIgnoreCase(req.getEmail())) {
-                                    return Uni.createFrom()
-                                            .failure(new RuntimeException("User with this email already exists"));
-                                }
-                            }
+            return userQueryPort.findByEmail(req.getEmail())
+                    .onFailure().recoverWithItem(err -> null)
+                    .onItem().transformToUni(existing -> {
+                        if (existing != null) {
+                            return Uni.createFrom()
+                                    .failure(new RuntimeException("User with this email already exists"));
                         }
+                        CreateUserCmd createCmd = new CreateUserCmd(
+                                req.getFirstName(), req.getLastName(), req.getEmail(),
+                                req.getPassword(), req.getPassword());
+                        return userCommandPort.create(createCmd)
+                                .onFailure().recoverWithItem(err -> null)
+                                .onItem().transformToUni(createdUser -> {
+                                    if (createdUser == null) {
+                                        return Uni.createFrom().failure(new RuntimeException("Failed to create user"));
+                                    }
+                                    String verificationCode = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
 
-                        CreateUserRequest createReq = CreateUserRequest.newBuilder()
-                                .setFirstname(req.getFirstName())
-                                .setLastname(req.getLastName())
-                                .setEmail(req.getEmail())
-                                .setPassword(req.getPassword())
-                                .setConfirmPassword(req.getPassword())
-                                .build();
-
-                        return userCommandService.create(createReq);
-                    })
-                    .chain(createUserResponse -> {
-                        if (!"success".equalsIgnoreCase(createUserResponse.getStatus())) {
-                            return Uni.createFrom().failure(new RuntimeException(createUserResponse.getMessage()));
-                        }
-
-                        UserResponse user = createUserResponse.getData();
-                        String verificationCode = UUID.randomUUID().toString().substring(0, 6).toUpperCase();
-
-                        return redisService.setWithExpirationReactive("verification:" + req.getEmail(), verificationCode, 900)
-                                .chain(() -> redisService.setWithExpirationReactive(
-                                        "verification_code:" + verificationCode,
-                                        req.getEmail(), 900))
-                                .chain(() -> sendWelcomeEmail(user, verificationCode))
-                                .chain(() -> {
-                                    return roleService
-                                            .findByNameRole(
-                                                    FindByNameRoleRequest.newBuilder().setName("ROLE_USER").build())
-                                            .onFailure().recoverWithItem(err -> {
-                                                log.warn("Failed to find ROLE_USER, using fallback ID 2: {}",
-                                                        err.getMessage());
-                                                return ApiResponseRole.newBuilder()
-                                                        .setData(
-                                                                pb.role.Role.RoleResponse.newBuilder().setId(2).build())
-                                                        .build();
-                                            })
-                                            .chain(roleResp -> {
-                                                int roleId = roleResp.hasData() ? roleResp.getData().getId() : 2;
-                                                if (roleId <= 0) {
-                                                    roleId = 2;
-                                                }
-                                                AssignRoleToUserRequest assignReq = AssignRoleToUserRequest.newBuilder()
-                                                        .setUserId(user.getId())
-                                                        .setRoleId(roleId)
-                                                        .build();
-                                                return roleCommandService.assignRoleToUser(assignReq)
-                                                        .replaceWith(user);
-                                            });
+                                    return redisService.setWithExpirationReactive("verification:" + req.getEmail(), verificationCode, 900)
+                                            .chain(() -> redisService.setWithExpirationReactive(
+                                                    "verification_code:" + verificationCode,
+                                                    req.getEmail(), 900))
+                                            .chain(() -> sendWelcomeEmail(createdUser, verificationCode))
+                                            .chain(() -> roleQueryPort.findByName("ROLE_USER")
+                                                    .onFailure().recoverWithItem(err -> new Role(2, "ROLE_USER", null, null))
+                                                    .onItem().transformToUni(role -> {
+                                                        int roleId = (role != null && role.id() > 0) ? role.id() : 2;
+                                                        return roleCommandPort.assignRoleToUser(createdUser.id(), roleId)
+                                                                .replaceWith(createdUser);
+                                                    }))
+                                            .map(user -> toUserResponse(user));
                                 });
                     })
                     .invoke(user -> log.info("Successfully registered user: {}", user.getEmail()));
@@ -171,30 +136,27 @@ public class AuthService {
                             return Uni.createFrom()
                                     .failure(new RuntimeException("Account is locked due to too many failed attempts"));
                         }
-                        return userCommandService.verifyPassword(VerifyPasswordRequest.newBuilder()
-                                .setEmail(email)
-                                .setPassword(password)
-                                .build());
+                        return userQueryPort.verifyPassword(email, password);
                     })
                     .chain(verifyRes -> {
-                        if (!verifyRes.getValid()) {
+                        if (!verifyRes.valid()) {
                             return handleFailedLogin(email, failedAttemptsKey, lockKey);
                         }
 
-                        UserResponse user = verifyRes.getUser();
+                        User user = verifyRes.user();
 
-                        String accessToken = jwtUtil.generateToken(user.getEmail(),
+                        String accessToken = jwtUtil.generateToken(user.email(),
                                 Collections.singletonList("ROLE_USER"),
-                                (long) user.getId());
-                        String refreshTokenStr = jwtUtil.generateRefreshToken(user.getEmail(), (long) user.getId());
+                                (long) user.id());
+                        String refreshTokenStr = jwtUtil.generateRefreshToken(user.email(), (long) user.id());
 
                         RefreshToken rt = new RefreshToken();
-                        rt.setUserId((long) user.getId());
+                        rt.setUserId((long) user.id());
                         rt.setToken(refreshTokenStr);
                         rt.setExpiration(new Timestamp(System.currentTimeMillis() + jwtUtil.getRefreshExpirationMs()));
 
                         return redisService.deleteReactive(failedAttemptsKey)
-                                .chain(() -> refreshTokenRepository.deleteByUserId((long) user.getId()))
+                                .chain(() -> refreshTokenRepository.deleteByUserId((long) user.id()))
                                 .chain(() -> refreshTokenRepository.persist(rt))
                                 .map(v -> new String[] { accessToken, refreshTokenStr });
                     })
@@ -221,18 +183,17 @@ public class AuthService {
                                     .failure(new RuntimeException("Refresh token is invalid or expired"));
                         }
 
-                        return userQueryService
-                                .findById(FindByIdUserRequest.newBuilder().setId(rt.getUserId().intValue()).build())
-                                .chain(userRes -> {
-                                    if (!"success".equalsIgnoreCase(userRes.getStatus()) || !userRes.hasData()) {
+                        return userQueryPort.findById(rt.getUserId().intValue())
+                                .onFailure().recoverWithItem(err -> null)
+                                .onItem().transformToUni(user -> {
+                                    if (user == null) {
                                         return Uni.createFrom().failure(new RuntimeException("User not found"));
                                     }
 
-                                    UserResponse user = userRes.getData();
-                                    String newAccessToken = jwtUtil.generateToken(user.getEmail(),
-                                            Collections.singletonList("ROLE_USER"), (long) user.getId());
-                                    String newRefreshTokenStr = jwtUtil.generateRefreshToken(user.getEmail(),
-                                            (long) user.getId());
+                                    String newAccessToken = jwtUtil.generateToken(user.email(),
+                                            Collections.singletonList("ROLE_USER"), (long) user.id());
+                                    String newRefreshTokenStr = jwtUtil.generateRefreshToken(user.email(),
+                                            (long) user.id());
 
                                     rt.setToken(newRefreshTokenStr);
                                     rt.setExpiration(
@@ -255,22 +216,21 @@ public class AuthService {
 
         return runTraced("forgotPassword", "forgot_password", attrs, () -> {
             log.info("Initiated forgot password process for email: {}", email);
-            return userQueryService
-                    .findAll(FindAllUserRequest.newBuilder().setSearch(email).setPage(1).setPageSize(1).build())
-                    .chain(findAllResponse -> {
-                        if (findAllResponse.getDataCount() == 0) {
+            return userQueryPort.findByEmail(email)
+                    .onFailure().recoverWithItem(err -> null)
+                    .onItem().transformToUni(user -> {
+                        if (user == null) {
                             return Uni.createFrom().failure(new RuntimeException("User not found"));
                         }
 
-                        UserResponse user = findAllResponse.getData(0);
                         String token = UUID.randomUUID().toString();
 
                         ResetToken resetToken = new ResetToken();
-                        resetToken.setUserId((long) user.getId());
+                        resetToken.setUserId((long) user.id());
                         resetToken.setToken(token);
                         resetToken.setExpiration(new Timestamp(System.currentTimeMillis() + 900000)); // 15 mins
 
-                        return resetTokenRepository.deleteByUserId((long) user.getId())
+                        return resetTokenRepository.deleteByUserId((long) user.id())
                                 .chain(() -> resetTokenRepository.persist(resetToken))
                                 .chain(() -> sendForgotPasswordEmail(user, token));
                     })
@@ -296,28 +256,22 @@ public class AuthService {
                             return Uni.createFrom().failure(new RuntimeException("Invalid or expired reset token"));
                         }
 
-                        return userQueryService
-                                .findById(FindByIdUserRequest.newBuilder().setId(rt.getUserId().intValue()).build())
-                                .chain(userRes -> {
-                                    if (!"success".equalsIgnoreCase(userRes.getStatus()) || !userRes.hasData()) {
+                        return userQueryPort.findById(rt.getUserId().intValue())
+                                .onFailure().recoverWithItem(err -> null)
+                                .onItem().transformToUni(user -> {
+                                    if (user == null) {
                                         return Uni.createFrom().failure(new RuntimeException("User not found"));
                                     }
 
-                                    UserResponse user = userRes.getData();
-                                    UpdateUserRequest updateReq = UpdateUserRequest.newBuilder()
-                                            .setId(user.getId())
-                                            .setFirstname(user.getFirstname())
-                                            .setLastname(user.getLastname())
-                                            .setEmail(user.getEmail())
-                                            .setPassword(req.getPassword())
-                                            .setConfirmPassword(req.getConfirmPassword())
-                                            .build();
-
-                                    return userCommandService.update(updateReq);
+                                    UpdateUserCmd updateCmd = new UpdateUserCmd(
+                                            user.id(), user.firstname(), user.lastname(), user.email(),
+                                            req.getPassword(), req.getConfirmPassword());
+                                    return userCommandPort.update(updateCmd);
                                 })
-                                .chain(updateRes -> {
-                                    if (!"success".equalsIgnoreCase(updateRes.getStatus())) {
-                                        return Uni.createFrom().failure(new RuntimeException(updateRes.getMessage()));
+                                .onFailure().recoverWithItem(err -> null)
+                                .onItem().transformToUni(updatedUser -> {
+                                    if (updatedUser == null) {
+                                        return Uni.createFrom().failure(new RuntimeException("Failed to update user"));
                                     }
                                     return resetTokenRepository.delete(rt);
                                 })
@@ -355,12 +309,13 @@ public class AuthService {
 
     public Uni<UserResponse> getMe(Long userId) {
         log.info("Fetching profile for user ID: {}", userId);
-        return userQueryService.findById(FindByIdUserRequest.newBuilder().setId(userId.intValue()).build())
-                .map(res -> {
-                    if (!"success".equalsIgnoreCase(res.getStatus()) || !res.hasData()) {
+        return userQueryPort.findById(userId.intValue())
+                .onFailure().recoverWithItem(err -> null)
+                .map(user -> {
+                    if (user == null) {
                         throw new RuntimeException("User not found");
                     }
-                    return res.getData();
+                    return toUserResponse(user);
                 })
                 .invoke(user -> log.info("Successfully retrieved profile for user: {}", user.getEmail()))
                 .onFailure().invoke(err -> log.error("Failed to retrieve profile for user ID: {}, error: {}", userId,
@@ -397,33 +352,33 @@ public class AuthService {
      * flushed by {@code OutboxPublisher} in the same DB transaction as the
      * user creation. Kafka being down no longer loses the notification.
      */
-    private Uni<Void> sendWelcomeEmail(UserResponse user, String code) {
+    private Uni<Void> sendWelcomeEmail(User user, String code) {
         String subject = "Welcome to Quarkus Modular Monolith";
         String body = String.format(
                 "Hello %s %s,\n\nWelcome to our platform! Use the following code to verify your email address:\n\n%s\n\nRegards,\nSupport Team",
-                user.getFirstname(), user.getLastname(), code);
+                user.firstname(), user.lastname(), code);
 
         JsonObject payload = new JsonObject()
-                .put("email", user.getEmail())
+                .put("email", user.email())
                 .put("subject", subject)
                 .put("body", body);
 
-        return persistOutboxEvent("USER", String.valueOf(user.getId()),
+        return persistOutboxEvent("USER", String.valueOf(user.id()),
                 "email-service-topic-auth-register", payload);
     }
 
-    private Uni<Void> sendForgotPasswordEmail(UserResponse user, String token) {
+    private Uni<Void> sendForgotPasswordEmail(User user, String token) {
         String subject = "Reset Password Verification";
         String body = String.format(
                 "Hello %s %s,\n\nYou have requested a password reset. Use the following token to reset your password:\n\n%s\n\nThis token will expire in 15 minutes.\n\nRegards,\nSupport Team",
-                user.getFirstname(), user.getLastname(), token);
+                user.firstname(), user.lastname(), token);
 
         JsonObject payload = new JsonObject()
-                .put("email", user.getEmail())
+                .put("email", user.email())
                 .put("subject", subject)
                 .put("body", body);
 
-        return persistOutboxEvent("USER", String.valueOf(user.getId()),
+        return persistOutboxEvent("USER", String.valueOf(user.id()),
                 "email-service-topic-auth-forgot-password", payload);
     }
 
@@ -440,6 +395,15 @@ public class AuthService {
         outbox.setEventId(outbox.getPayload() != null ?
                 new io.vertx.core.json.JsonObject(outbox.getPayload()).getString("event_id") : null);
         return outboxRepository.persist(outbox).replaceWithVoid();
+    }
+
+    private UserResponse toUserResponse(User u) {
+        return UserResponse.newBuilder()
+                .setId(u.id())
+                .setFirstname(u.firstname())
+                .setLastname(u.lastname())
+                .setEmail(u.email())
+                .build();
     }
 
     private <T> Uni<T> runTraced(String operationName, String method, Attributes attributes,

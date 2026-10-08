@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: transaction
+  namespace: point-of-sale
+spec:
+  selector:
+    app: transaction
+  ports:
+    - name: grpc
+      port: 50058
+      targetPort: 50058
+  type: ClusterIP

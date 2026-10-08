@@ -5,7 +5,7 @@ import java.util.stream.Collectors;
 
 public class OrderDto {
 
-    @org.eclipse.microprofile.graphql.Name("CreateOrderItemRequest")
+    @org.eclipse.microprofile.graphql.Name("OrderCreateOrderItemRequest")
     public record CreateOrderItemRequest(
             int productId,
             int quantity) {
@@ -18,7 +18,7 @@ public class OrderDto {
             List<CreateOrderItemRequest> items) {
     }
 
-    @org.eclipse.microprofile.graphql.Name("UpdateOrderItemRequest")
+    @org.eclipse.microprofile.graphql.Name("OrderUpdateOrderItemRequest")
     public record UpdateOrderItemRequest(
             int orderItemId,
             int productId,

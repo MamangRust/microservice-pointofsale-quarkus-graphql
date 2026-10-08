@@ -3,6 +3,7 @@ package com.sanedge.order_item.service.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
@@ -35,12 +36,12 @@ import com.sanedge.order_item.repository.OrderItemRepository;
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
 import jakarta.validation.Validator;
-import pb.order.MutinyOrderCommandServiceGrpc.MutinyOrderCommandServiceStub;
-import pb.order.MutinyOrderQueryServiceGrpc.MutinyOrderQueryServiceStub;
-import pb.order.Order;
-import pb.product.MutinyProductCommandServiceGrpc.MutinyProductCommandServiceStub;
-import pb.product.MutinyProductServiceGrpc.MutinyProductServiceStub;
-import pb.product.Product;
+import com.sanedge.common.adapter.model.Order;
+import com.sanedge.common.adapter.model.Product;
+import com.sanedge.common.adapter.order.OrderCommandPort;
+import com.sanedge.common.adapter.order.OrderQueryPort;
+import com.sanedge.common.adapter.product.ProductCommandPort;
+import com.sanedge.common.adapter.product.ProductQueryPort;
 
 @ExtendWith(MockitoExtension.class)
 class OrderItemCommandServiceImplTest {
@@ -50,21 +51,17 @@ class OrderItemCommandServiceImplTest {
     @Mock private RedisService redisService;
     @Mock private TracingMetrics tracingMetrics;
 
-    @Mock private MutinyOrderQueryServiceStub orderQueryService;
-    @Mock private MutinyOrderCommandServiceStub orderCommandService;
-    @Mock private MutinyProductServiceStub productQueryService;
-    @Mock private MutinyProductCommandServiceStub productCommandService;
+    @Mock private OrderQueryPort orderQueryPort;
+    @Mock private OrderCommandPort orderCommandPort;
+    @Mock private ProductQueryPort productQueryPort;
+    @Mock private ProductCommandPort productCommandPort;
 
     private OrderItemCommandServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new OrderItemCommandServiceImpl(orderItemRepository, validator, redisService, tracingMetrics);
-        // inject gRPC stubs
-        service.orderQueryService = orderQueryService;
-        service.orderCommandService = orderCommandService;
-        service.productQueryService = productQueryService;
-        service.productCommandService = productCommandService;
+        service = new OrderItemCommandServiceImpl(orderItemRepository, validator, redisService, tracingMetrics,
+                orderQueryPort, orderCommandPort, productQueryPort, productCommandPort);
 
         // Lenient stub for traceAndMeasure
         lenient().doAnswer(invocation -> {
@@ -76,24 +73,17 @@ class OrderItemCommandServiceImplTest {
         lenient().when(orderItemRepository.deleteAllDeleted()).thenReturn(Uni.createFrom().item(true));
         lenient().when(orderItemRepository.restoreAllDeleted()).thenReturn(Uni.createFrom().item(true));
 
-        // common gRPC stubs
-        lenient().when(orderQueryService.findById(any()))
-                .thenReturn(Uni.createFrom().item(Order.ApiResponseOrder.newBuilder()
-                        .setStatus("success")
-                        .setData(Order.OrderResponse.newBuilder().setId(100).setTotalPrice(10000).build())
-                        .build()));
-        lenient().when(orderCommandService.updateOrderTotalPrice(any()))
-                .thenReturn(Uni.createFrom().item(Order.ApiResponseOrder.newBuilder()
-                        .setStatus("success")
-                        .build()));
-        lenient().when(productQueryService.findById(any()))
-                .thenReturn(Uni.createFrom().item(pb.product.Product.ApiResponseProduct.newBuilder()
-                        .setStatus("success")
-                        .setData(Product.ProductResponse.newBuilder().setId(10).setCountInStock(100).setPrice(5000).build())
-                        .build()));
-        lenient().when(productCommandService.update(any()))
-                .thenReturn(Uni.createFrom().item(pb.product.Product.ApiResponseProduct.newBuilder()
-                        .setStatus("success").build()));
+        // common port stubs
+        lenient().when(orderQueryPort.findById(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Order(100, 10, 0, 10000, null, null)));
+        lenient().when(orderCommandPort.updateOrderTotalPrice(anyInt(), anyInt()))
+                .thenReturn(Uni.createFrom().voidItem());
+        lenient().when(productQueryPort.findById(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Product(10, 1, 1, "name", "desc", 5000, 100, "brand", 1, 0.0f,
+                        "slug", "img", "barcode", null, null)));
+        lenient().when(productCommandPort.update(any()))
+                .thenReturn(Uni.createFrom().item(new Product(10, 1, 1, "name", "desc", 5000, 98, "brand", 1, 0.0f,
+                        "slug", "img", "barcode", null, null)));
     }
 
     private OrderItem createMockOrderItem(Long id) {
@@ -133,8 +123,8 @@ class OrderItemCommandServiceImplTest {
         }
 
         @Test void orderNotFound_throwsException() {
-            when(orderQueryService.findById(any()))
-                    .thenReturn(Uni.createFrom().item(Order.ApiResponseOrder.newBuilder().setStatus("error").build()));
+            when(orderQueryPort.findById(anyInt()))
+                    .thenReturn(Uni.createFrom().failure(new ResourceNotFoundException("Order not found")));
 
             CreateOrderItemRequest req = new CreateOrderItemRequest();
             req.setOrderId(100);

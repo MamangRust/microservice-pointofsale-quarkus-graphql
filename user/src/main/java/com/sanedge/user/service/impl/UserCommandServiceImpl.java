@@ -25,8 +25,8 @@ import com.sanedge.user.entity.User;
 import com.sanedge.user.repository.UserRepository;
 import com.sanedge.user.service.UserCommandService;
 
+import com.sanedge.common.adapter.role.RoleQueryPort;
 import io.opentelemetry.api.common.Attributes;
-import io.quarkus.grpc.GrpcClient;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -41,20 +41,19 @@ public class UserCommandServiceImpl implements UserCommandService {
         private final PasswordUtil passwordUtil;
         private final RedisService redisService;
         private final TracingMetrics tracingMetrics;
-
-        @Inject
-        @GrpcClient("role")
-        pb.role.RoleService roleQueryService;
+        private final RoleQueryPort roleQueryPort;
 
         @Inject
         public UserCommandServiceImpl(UserRepository userRepository,
                         PasswordUtil passwordUtil,
                         RedisService redisService,
-                        TracingMetrics tracingMetrics) {
+                        TracingMetrics tracingMetrics,
+                        RoleQueryPort roleQueryPort) {
                 this.userRepository = userRepository;
                 this.passwordUtil = passwordUtil;
                 this.redisService = redisService;
                 this.tracingMetrics = tracingMetrics;
+                this.roleQueryPort = roleQueryPort;
         }
 
         @Override
@@ -467,18 +466,11 @@ public class UserCommandServiceImpl implements UserCommandService {
         }
 
         private Uni<Role> resolveRoleViaGrpc(String roleName) {
-                return roleQueryService.findByNameRole(pb.role.RoleQuery.FindByNameRoleRequest.newBuilder()
-                                .setName(roleName)
-                                .build())
-                                .chain(response -> {
-                                        if (!response.hasData()) {
-                                                return Uni.createFrom().failure(new ResourceNotFoundException(
-                                                                "Role '" + roleName + "' not found in Role service"));
-                                        }
-                                        pb.role.Role.RoleResponse matchedRole = response.getData();
+                return roleQueryPort.findByName(roleName)
+                                .chain(matchedRole -> {
                                         Role role = new Role();
-                                        role.id = (long) matchedRole.getId();
-                                        role.setRoleName(matchedRole.getName());
+                                        role.id = (long) matchedRole.id();
+                                        role.setRoleName(matchedRole.name());
                                         return Uni.createFrom().item(role);
                                 });
         }

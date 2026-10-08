@@ -77,13 +77,13 @@ public class BackfillLifecycle {
     private Uni<Void> backfillOrders(String fromDate) {
         String selectSql = """
                 SELECT o."order_id", o."merchant_id", o."cashier_id", o."total_price", o."created_at"
-                FROM "pos_order"."orders" o
+                FROM "orders" o
                 WHERE o."created_at" >= $1::timestamp
                 ORDER BY o."order_id"
                 """;
 
         String insertSql = """
-                INSERT INTO "pos_order"."outbox"
+                INSERT INTO "outbox"
                 ("aggregate_type", "aggregate_id", "topic", "payload", "status", "domain", "event_id")
                 VALUES ($1, $2, $3, $4, 'PENDING', $5, $6)
                 ON CONFLICT DO NOTHING
@@ -126,13 +126,13 @@ public class BackfillLifecycle {
         String selectSql = """
                 SELECT t."transaction_id", t."order_id", t."merchant_id", t."payment_method",
                        t."amount", t."status", t."created_at"
-                FROM "pos_transaction"."transactions" t
+                FROM "transactions" t
                 WHERE t."created_at" >= $1::timestamp
                 ORDER BY t."transaction_id"
                 """;
 
         String insertSql = """
-                INSERT INTO "pos_order"."outbox"
+                INSERT INTO "outbox"
                 ("aggregate_type", "aggregate_id", "topic", "payload", "status", "domain", "event_id")
                 VALUES ($1, $2, $3, $4, 'PENDING', $5, $6)
                 ON CONFLICT DO NOTHING

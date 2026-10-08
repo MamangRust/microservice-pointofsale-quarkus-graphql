@@ -42,12 +42,12 @@ import com.sanedge.transaction.repository.TransactionQueryRepository;
 
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
-import pb.merchant.Merchant;
-import pb.merchant.MutinyMerchantQueryServiceGrpc.MutinyMerchantQueryServiceStub;
-import pb.order.MutinyOrderQueryServiceGrpc.MutinyOrderQueryServiceStub;
-import pb.order.Order;
-import pb.order_item.MutinyOrderItemServiceGrpc.MutinyOrderItemServiceStub;
-import pb.order_item.OrderItem;
+import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.model.Merchant;
+import com.sanedge.common.adapter.order.OrderQueryPort;
+import com.sanedge.common.adapter.model.Order;
+import com.sanedge.common.adapter.order_item.OrderItemQueryPort;
+import com.sanedge.common.adapter.model.OrderItem;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionCommandServiceImplTest {
@@ -58,21 +58,17 @@ class TransactionCommandServiceImplTest {
     @Mock private RedisService redisService;
     @Mock private TracingMetrics tracingMetrics;
 
-    @Mock private MutinyMerchantQueryServiceStub merchantQueryService;
-    @Mock private MutinyOrderQueryServiceStub orderQueryService;
-    @Mock private MutinyOrderItemServiceStub orderItemQueryService;
+    @Mock private MerchantQueryPort merchantQueryPort;
+    @Mock private OrderQueryPort orderQueryPort;
+    @Mock private OrderItemQueryPort orderItemQueryPort;
 
     private TransactionCommandServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new TransactionCommandServiceImpl(transactionQueryRepo, transactionCommandRepo, outboxRepository, redisService, tracingMetrics);
+        service = new TransactionCommandServiceImpl(transactionQueryRepo, transactionCommandRepo, outboxRepository, redisService, tracingMetrics, merchantQueryPort, orderQueryPort, orderItemQueryPort);
         service.notificationEmail = "admin@example.com";
         lenient().when(outboxRepository.persist(any(Outbox.class))).thenReturn(Uni.createFrom().nullItem());
-        // inject gRPC stubs via field (they are field-injected in the service)
-        service.merchantQueryService = merchantQueryService;
-        service.orderQueryService = orderQueryService;
-        service.orderItemQueryService = orderItemQueryService;
 
         // Lenient stub for traceAndMeasure
         lenient().doAnswer(invocation -> {
@@ -84,24 +80,16 @@ class TransactionCommandServiceImplTest {
         lenient().when(transactionCommandRepo.deleteAllDeleted()).thenReturn(Uni.createFrom().item(true));
         lenient().when(transactionCommandRepo.restoreAllDeleted()).thenReturn(Uni.createFrom().item(true));
 
-        // common gRPC stubs
-        lenient().when(merchantQueryService.findByIdMerchant(any()))
-                .thenReturn(Uni.createFrom().item(Merchant.ApiResponseMerchant.newBuilder()
-                        .setStatus("success")
-                        .setData(Merchant.MerchantResponse.newBuilder().setId(10).build())
-                        .build()));
-        lenient().when(orderQueryService.findById(any()))
-                .thenReturn(Uni.createFrom().item(Order.ApiResponseOrder.newBuilder()
-                        .setStatus("success")
-                        .setData(Order.OrderResponse.newBuilder().setId(100).build())
-                        .build()));
+        // common port stubs
+        lenient().when(merchantQueryPort.findByMerchantId(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Merchant(10, "", "", "", 100, null, null)));
+        lenient().when(orderQueryPort.findById(anyInt()))
+                .thenReturn(Uni.createFrom().item(new Order(100, 10, 0, 0, null, null)));
         // order items for total calculation
-        lenient().when(orderItemQueryService.findOrderItemByOrder(any()))
-                .thenReturn(Uni.createFrom().item(OrderItem.ApiResponsesOrderItem.newBuilder()
-                        .setStatus("success")
-                        .addData(OrderItem.OrderItemResponse.newBuilder().setQuantity(2).setPrice(5000).build())
-                        .addData(OrderItem.OrderItemResponse.newBuilder().setQuantity(1).setPrice(10000).build())
-                        .build()));
+        lenient().when(orderItemQueryPort.findOrderItemByOrder(anyInt()))
+                .thenReturn(Uni.createFrom().item(List.of(
+                        new OrderItem(0, 100, 0, 2, 5000, null, null),
+                        new OrderItem(0, 100, 0, 1, 10000, null, null))));
     }
 
     private Transaction createMockTransaction(Long id) {
@@ -202,7 +190,7 @@ class TransactionCommandServiceImplTest {
             assertThat(resp.data().getId()).isEqualTo(7);
             verify(transactionCommandRepo, never()).persist(any(Transaction.class));
             verify(outboxRepository, never()).persist(any(Outbox.class));
-            verify(merchantQueryService, never()).findByIdMerchant(any());
+            verify(merchantQueryPort, never()).findByMerchantId(anyInt());
         }
 
         @Test void create_persistsIdempotencyKey() {
@@ -224,11 +212,8 @@ class TransactionCommandServiceImplTest {
 
         @Test void invalidItemQuantity_doesNotPersistOutbox() {
             CreateTransactionRequest req = createReq();
-            when(orderItemQueryService.findOrderItemByOrder(any()))
-                    .thenReturn(Uni.createFrom().item(OrderItem.ApiResponsesOrderItem.newBuilder()
-                            .setStatus("success")
-                            .addData(OrderItem.OrderItemResponse.newBuilder().setQuantity(0).setPrice(5000).build())
-                            .build()));
+            when(orderItemQueryPort.findOrderItemByOrder(anyInt()))
+                    .thenReturn(Uni.createFrom().item(List.of(new OrderItem(0, 100, 0, 0, 5000, null, null))));
 
             ApiResponse<TransactionResponse> resp = service.create(req).await().indefinitely();
             assertThat(resp.status()).isEqualTo("error");
