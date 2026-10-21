@@ -18,6 +18,9 @@ import lombok.Data;
 @Table(name = "outbox")
 public class Outbox {
 
+    /** Domain discriminator of the outbox rows owned by the transaction module. */
+    public static final String DOMAIN_TRANSACTION = "transaction";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -27,6 +30,9 @@ public class Outbox {
 
     @Column(name = "aggregate_id", nullable = false, length = 100)
     private String aggregateId;
+
+    @Column(name = "event_key", length = 200)
+    private String eventKey;
 
     @Column(nullable = false, length = 200)
     private String topic;
@@ -40,6 +46,15 @@ public class Outbox {
 
     @Column(nullable = false)
     private Integer attempts = 0;
+
+    @Column(name = "next_attempt_at")
+    private Timestamp nextAttemptAt;
+
+    @Column(name = "claimed_at")
+    private Timestamp claimedAt;
+
+    @Column(name = "claim_token", length = 100)
+    private String claimToken;
 
     @Column(name = "domain", length = 50)
     private String domain;

@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-create-stats-topics
+  namespace: point-of-sale
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      serviceAccountName: app
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topic-init
+          image: apache/kafka:4.3.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Creating point-of-sale stats Kafka topics..."
+              for topic in \
+                stats.pos.order.event \
+                stats.pos.order_item.event \
+                stats.pos.transaction.event; do
+                kafka-topics.sh \
+                  --bootstrap-server kafka.point-of-sale.svc.cluster.local:9092 \
+                  --create \
+                  --if-not-exists \
+                  --replication-factor 1 \
+                  --partitions 1 \
+                  --topic "$topic"
+              done
+              echo "All point-of-sale stats topics created (or already exist)."

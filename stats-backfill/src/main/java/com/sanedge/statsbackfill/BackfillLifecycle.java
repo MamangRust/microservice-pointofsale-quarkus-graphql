@@ -110,7 +110,7 @@ public class BackfillLifecycle {
                                 return pool.preparedQuery(insertSql)
                                         .execute(Tuple.of(
                                                 "Order", String.valueOf(orderId),
-                                                "stats.pos.order.event",
+                                                com.sanedge.common.event.EventTopics.ORDER,
                                                 com.sanedge.common.event.EventEnvelope
                                                         .withDefaults(payload, "order.created").encode(),
                                                 "order", eventId))
@@ -160,7 +160,7 @@ public class BackfillLifecycle {
                                 return pool.preparedQuery(insertSql)
                                         .execute(Tuple.of(
                                                 "Transaction", String.valueOf(txId),
-                                                "stats.pos.transaction.event",
+                                                com.sanedge.common.event.EventTopics.TRANSACTIONS,
                                                 com.sanedge.common.event.EventEnvelope
                                                         .withDefaults(payload, "transaction.created").encode(),
                                                 "transaction", eventId))

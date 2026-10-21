@@ -1,7 +1,9 @@
 package com.sanedge.transaction.service.impl;
 
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,11 +22,14 @@ import com.sanedge.transaction.entity.Transaction;
 import com.sanedge.transaction.repository.OutboxRepository;
 import com.sanedge.transaction.repository.TransactionCommandRepository;
 import com.sanedge.transaction.repository.TransactionQueryRepository;
+import com.sanedge.transaction.service.KafkaService;
 import com.sanedge.transaction.service.TransactionCommandService;
 
 import com.sanedge.common.adapter.merchant.MerchantQueryPort;
+import com.sanedge.common.adapter.model.Order;
 import com.sanedge.common.adapter.order.OrderQueryPort;
 import com.sanedge.common.adapter.order_item.OrderItemQueryPort;
+import com.sanedge.common.event.EventTopics;
 import io.opentelemetry.api.common.Attributes;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Uni;
@@ -49,6 +54,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
         private final MerchantQueryPort merchantQueryPort;
         private final OrderQueryPort orderQueryPort;
         private final OrderItemQueryPort orderItemQueryPort;
+        private final KafkaService kafkaService;
 
         @Inject
         public TransactionCommandServiceImpl(TransactionQueryRepository transactionQueryRepository,
@@ -58,7 +64,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                         TracingMetrics tracingMetrics,
                         MerchantQueryPort merchantQueryPort,
                         OrderQueryPort orderQueryPort,
-                        OrderItemQueryPort orderItemQueryPort) {
+                        OrderItemQueryPort orderItemQueryPort,
+                        KafkaService kafkaService) {
                 this.transactionQueryRepository = transactionQueryRepository;
                 this.transactionCommandRepository = transactionCommandRepository;
                 this.outboxRepository = outboxRepository;
@@ -67,6 +74,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                 this.merchantQueryPort = merchantQueryPort;
                 this.orderQueryPort = orderQueryPort;
                 this.orderItemQueryPort = orderItemQueryPort;
+                this.kafkaService = kafkaService;
         }
 
         private Uni<Void> clearCache(Long transactionId, Long orderId) {
@@ -224,7 +232,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                                                                                                                 return transactionCommandRepository
                                                                                                                                 .persist(transaction)
                                                                                                                                 .chain(savedTx -> persistOutboxEvent(savedTx)
-                                                                                                                                                .chain(() -> clearCache(
+                                                                                                                                .chain(() -> persistTransactionStats(savedTx, order))
+                                                                                                                                .chain(() -> clearCache(
                                                                                                                                                                 savedTx.getTransactionId(),
                                                                                                                                                                 savedTx.getOrderId())
                                                                                                                                                                 .map(v -> {
@@ -595,6 +604,8 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                 Outbox outbox = new Outbox();
                 outbox.setAggregateType("TRANSACTION");
                 outbox.setAggregateId(String.valueOf(tx.getTransactionId()));
+                outbox.setEventKey(String.valueOf(tx.getTransactionId()));
+                outbox.setDomain(Outbox.DOMAIN_TRANSACTION);
                 outbox.setTopic("email-service-topic-transaction-create");
                 // Phase 2 (event contract): attach the standard envelope
                 // (event_id, schema_version, event_type, occurred_at) before
@@ -602,38 +613,7 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
                 outbox.setPayload(com.sanedge.common.event.EventEnvelope
                                 .withDefaults(payload, "email-service-topic-transaction-create").encode());
 
-                return outboxRepository.persist(outbox)
-                        .chain(() -> persistStatsEvent(tx));
-        }
-
-        /**
-         * Writes a transaction.created event to the outbox for the stats pipeline.
-         * This event will be consumed by stats-writer and inserted into ClickHouse.
-         */
-        private Uni<Void> persistStatsEvent(Transaction tx) {
-                io.vertx.core.json.JsonObject statsPayload = new io.vertx.core.json.JsonObject()
-                        .put("transaction_id", tx.getTransactionId())
-                        .put("order_id", tx.getOrderId())
-                        .put("merchant_id", tx.getMerchantId())
-                        .put("payment_method", tx.getPaymentMethod())
-                        .put("amount", tx.getAmount())
-                        .put("status", tx.getStatus() != null ? tx.getStatus().getValue() : "unknown")
-                        .put("occurred_at", java.time.Instant.now().toString());
-
-                io.vertx.core.json.JsonObject eventPayload =
-                        com.sanedge.common.event.EventEnvelope.withDefaults(statsPayload, "transaction.created");
-
-                String eventId = eventPayload.getString("event_id");
-
-                Outbox statsOutbox = new Outbox();
-                statsOutbox.setAggregateType("Transaction");
-                statsOutbox.setAggregateId(String.valueOf(tx.getTransactionId()));
-                statsOutbox.setTopic("stats.pos.transaction.event");
-                statsOutbox.setPayload(eventPayload.encode());
-                statsOutbox.setDomain("transaction");
-                statsOutbox.setEventId(eventId);
-
-                return outboxRepository.persist(statsOutbox).replaceWithVoid();
+                return outboxRepository.persistEvent(outbox).replaceWithVoid();
         }
 
         private boolean isIdempotencyConflict(Throwable err) {
@@ -651,5 +631,45 @@ public class TransactionCommandServiceImpl implements TransactionCommandService 
         private <T> Uni<T> runTraced(String operationName, String method, Attributes attributes,
                         java.util.function.Supplier<Uni<T>> supplier) {
                 return tracingMetrics.traceAndMeasure(operationName, method, attributes, supplier);
+        }
+
+        /**
+         * Writes the stats event of a created transaction into the transactional
+         * outbox instead of publishing it directly. The row is stored in the
+         * same database transaction as the transaction itself, so the event is
+         * guaranteed to exist once the transaction was created — even when the
+         * broker is unavailable. The {@code OutboxPublisher} relays it to
+         * Kafka afterwards.
+         */
+        Uni<Void> persistTransactionStats(Transaction tx, Order order) {
+                String eventId = UUID.randomUUID().toString();
+                JsonObject payload = new JsonObject()
+                                .put("transaction_id", tx.getTransactionId())
+                                .put("order_id", tx.getOrderId())
+                                .put("merchant_id", tx.getMerchantId())
+                                .put("payment_method", tx.getPaymentMethod())
+                                .put("status", tx.getStatus() != null ? tx.getStatus().getValue() : "unknown")
+                                .put("amount", tx.getAmount() != null ? tx.getAmount() : 0);
+                JsonObject event = new JsonObject()
+                                .put("event_id", eventId)
+                                .put("event_type", "transaction.created")
+                                .put("occurred_at", Instant.now().toString())
+                                .put("payload", payload);
+
+                if (outboxRepository == null) {
+                        return kafkaService.sendExistingEvent(EventTopics.TRANSACTIONS,
+                                        String.valueOf(tx.getOrderId()), event.encode())
+                                .onFailure().recoverWithItem((Void) null);
+                }
+
+                Outbox outbox = new Outbox();
+                outbox.setAggregateType("TRANSACTION");
+                outbox.setAggregateId(String.valueOf(tx.getTransactionId()));
+                outbox.setEventKey(String.valueOf(tx.getOrderId()));
+                outbox.setDomain(Outbox.DOMAIN_TRANSACTION);
+                outbox.setTopic(EventTopics.TRANSACTIONS);
+                outbox.setEventId(eventId);
+                outbox.setPayload(event.encode());
+                return outboxRepository.persistEvent(outbox).replaceWithVoid();
         }
 }

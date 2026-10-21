@@ -156,6 +156,9 @@ public class OrderItemQueryGrpcHandler extends MutinyOrderItemServiceGrpc.OrderI
     }
 
     private PaginationMeta toProto(com.sanedge.common.domain.response.PaginationMeta m) {
+        if (m == null) {
+            return PaginationMeta.getDefaultInstance();
+        }
         return PaginationMeta.newBuilder()
                 .setCurrentPage(m.currentPage())
                 .setPageSize(m.pageSize())

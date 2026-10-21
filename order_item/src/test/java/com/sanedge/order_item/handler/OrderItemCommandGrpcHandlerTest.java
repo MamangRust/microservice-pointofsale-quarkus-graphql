@@ -18,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.sanedge.common.domain.response.ApiResponse;
 import com.sanedge.common.domain.response.ApiResponsePagination;
-import com.sanedge.common.domain.response.PaginationMeta;
 import com.sanedge.order_item.domain.response.OrderItemResponse;
 import com.sanedge.order_item.domain.response.OrderItemResponseDeleteAt;
 import com.sanedge.order_item.entity.OrderItem;
@@ -63,10 +62,6 @@ class OrderItemQueryGrpcHandlerTest {
         return r;
     }
 
-    private PaginationMeta meta(int totalRecords) {
-        return new PaginationMeta(1, 10, totalRecords == 0 ? 0 : 1, totalRecords);
-    }
-
     // findAll
     @Test
     @DisplayName("findAll - success")
@@ -76,7 +71,7 @@ class OrderItemQueryGrpcHandlerTest {
 
         OrderItemResponse data = createOrderItemResponse(1L);
         ApiResponsePagination<List<OrderItemResponse>> apiResp = new ApiResponsePagination<>(
-                "success", "Order items retrieved", List.of(data), meta(1));
+                "success", "Order items retrieved", List.of(data), null);
         when(orderItemQueryService.findAll(any())).thenReturn(Uni.createFrom().item(apiResp));
 
         OrderItemQuery.ApiResponsePaginationOrderItem response = handler.findAll(request).await().indefinitely();
@@ -91,8 +86,7 @@ class OrderItemQueryGrpcHandlerTest {
     @DisplayName("findAll - error response")
     void findAll_Error() {
         pb.order_item.OrderItem.FindAllOrderItemRequest request = pb.order_item.OrderItem.FindAllOrderItemRequest.newBuilder().build();
-        ApiResponsePagination<List<OrderItemResponse>> apiResp = new ApiResponsePagination<>(
-                "error", "DB error", null, null);
+        ApiResponsePagination<List<OrderItemResponse>> apiResp = new ApiResponsePagination<>("error", "DB error", null, null);
         when(orderItemQueryService.findAll(any())).thenReturn(Uni.createFrom().item(apiResp));
 
         OrderItemQuery.ApiResponsePaginationOrderItem response = handler.findAll(request).await().indefinitely();
@@ -108,7 +102,7 @@ class OrderItemQueryGrpcHandlerTest {
 
         OrderItemResponseDeleteAt data = createOrderItemDeleteAt(1L);
         ApiResponsePagination<List<OrderItemResponseDeleteAt>> apiResp = new ApiResponsePagination<>(
-                "success", "Active items", List.of(data), meta(1));
+                "success", "Active items", List.of(data), null);
         when(orderItemQueryService.findByActive(any())).thenReturn(Uni.createFrom().item(apiResp));
 
         OrderItemQuery.ApiResponsePaginationOrderItemDeleteAt response = handler.findByActive(request).await().indefinitely();
@@ -133,7 +127,7 @@ class OrderItemQueryGrpcHandlerTest {
         pb.order_item.OrderItem.FindAllOrderItemRequest request = pb.order_item.OrderItem.FindAllOrderItemRequest.newBuilder().build();
         OrderItemResponseDeleteAt data = createOrderItemDeleteAt(2L);
         ApiResponsePagination<List<OrderItemResponseDeleteAt>> apiResp = new ApiResponsePagination<>(
-                "success", "Trashed items", List.of(data), meta(1));
+                "success", "Trashed items", List.of(data), null);
         when(orderItemQueryService.findByTrashed(any())).thenReturn(Uni.createFrom().item(apiResp));
 
         OrderItemQuery.ApiResponsePaginationOrderItemDeleteAt response = handler.findByTrashed(request).await().indefinitely();
@@ -173,7 +167,7 @@ class OrderItemQueryGrpcHandlerTest {
     void findAll_Empty() {
         pb.order_item.OrderItem.FindAllOrderItemRequest request = pb.order_item.OrderItem.FindAllOrderItemRequest.newBuilder().build();
         ApiResponsePagination<List<OrderItemResponse>> apiResp = new ApiResponsePagination<>(
-                "success", "No items", List.of(), meta(0));
+                "success", "No items", List.of(), null);
         when(orderItemQueryService.findAll(any())).thenReturn(Uni.createFrom().item(apiResp));
 
         OrderItemQuery.ApiResponsePaginationOrderItem response = handler.findAll(request).await().indefinitely();

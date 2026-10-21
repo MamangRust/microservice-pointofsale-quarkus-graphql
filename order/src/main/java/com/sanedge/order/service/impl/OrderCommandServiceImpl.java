@@ -1,9 +1,12 @@
 package com.sanedge.order.service.impl;
 
 import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,22 +22,26 @@ import com.sanedge.common.adapter.model.Product;
 import com.sanedge.common.adapter.model.UpdateOrderItemCmd;
 import com.sanedge.common.adapter.model.UpdateProductCmd;
 import com.sanedge.common.adapter.order_item.OrderItemCommandPort;
+import com.sanedge.common.adapter.order_item.OrderItemQueryPort;
 import com.sanedge.common.adapter.product.ProductCommandPort;
 import com.sanedge.common.adapter.product.ProductQueryPort;
+import com.sanedge.common.event.EventTopics;
 import com.sanedge.order.domain.requests.CreateOrderRequest;
 import com.sanedge.order.domain.requests.UpdateOrderRequest;
 import com.sanedge.order.domain.response.OrderResponse;
 import com.sanedge.order.domain.response.OrderResponseDeleteAt;
-import com.sanedge.order.entity.Outbox;
 import com.sanedge.order.entity.Order;
+import com.sanedge.order.entity.Outbox;
 import com.sanedge.order.repository.OrderCommandRepository;
 import com.sanedge.order.repository.OrderQueryRepository;
+import com.sanedge.order.repository.OutboxRepository;
 import com.sanedge.order.service.OrderCommandService;
 
 import io.opentelemetry.api.common.Attributes;
 import io.quarkus.hibernate.reactive.panache.common.WithTransaction;
 import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
+import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.validation.ConstraintViolation;
@@ -47,7 +54,6 @@ public class OrderCommandServiceImpl implements OrderCommandService {
 
     private final OrderQueryRepository orderQueryRepository;
     private final OrderCommandRepository orderCommandRepository;
-    private final com.sanedge.order.repository.OutboxRepository outboxRepository;
     private final Validator validator;
     private final RedisService redisService;
     private final TracingMetrics tracingMetrics;
@@ -57,11 +63,12 @@ public class OrderCommandServiceImpl implements OrderCommandService {
     private final ProductQueryPort productQueryPort;
     private final ProductCommandPort productCommandPort;
     private final OrderItemCommandPort orderItemCommandPort;
+    private final OrderItemQueryPort orderItemQueryPort;
+    private final OutboxRepository outboxRepository;
 
     @Inject
     public OrderCommandServiceImpl(OrderQueryRepository orderQueryRepository,
             OrderCommandRepository orderCommandRepository,
-            com.sanedge.order.repository.OutboxRepository outboxRepository,
             Validator validator,
             RedisService redisService,
             TracingMetrics tracingMetrics,
@@ -69,10 +76,11 @@ public class OrderCommandServiceImpl implements OrderCommandService {
             CashierQueryPort cashierQueryPort,
             ProductQueryPort productQueryPort,
             ProductCommandPort productCommandPort,
-            OrderItemCommandPort orderItemCommandPort) {
+            OrderItemCommandPort orderItemCommandPort,
+            OrderItemQueryPort orderItemQueryPort,
+            OutboxRepository outboxRepository) {
         this.orderQueryRepository = orderQueryRepository;
         this.orderCommandRepository = orderCommandRepository;
-        this.outboxRepository = outboxRepository;
         this.validator = validator;
         this.redisService = redisService;
         this.tracingMetrics = tracingMetrics;
@@ -81,6 +89,8 @@ public class OrderCommandServiceImpl implements OrderCommandService {
         this.productQueryPort = productQueryPort;
         this.productCommandPort = productCommandPort;
         this.orderItemCommandPort = orderItemCommandPort;
+        this.orderItemQueryPort = orderItemQueryPort;
+        this.outboxRepository = outboxRepository;
     }
 
     private <T> void validateRequest(T req) {
@@ -170,8 +180,10 @@ public class OrderCommandServiceImpl implements OrderCommandService {
                                     }))
                             .chain(order -> orderCommandRepository.persist(order).map(v -> order))
                             .chain(savedOrder -> {
-                                // F3: Write order.created event to outbox (same @WithTransaction)
-                                return persistOrderCreatedEvent(savedOrder)
+                                // F3: write order.created (order.event) and one order_item.created
+                                // event per order line (order_item.event) into the transactional
+                                // outbox — they are relayed to Kafka by the OutboxPublisher.
+                                return persistOrderStats(savedOrder)
                                         .replaceWith(savedOrder);
                             })
                             .map(savedOrder -> {
@@ -446,38 +458,90 @@ public class OrderCommandServiceImpl implements OrderCommandService {
                         }));
     }
 
-    /**
-     * Persists an order.created event to the outbox table within the same
-     * DB transaction as the order creation (transactional outbox pattern).
-     */
-    private Uni<Void> persistOrderCreatedEvent(Order order) {
-        io.vertx.core.json.JsonObject payload = new io.vertx.core.json.JsonObject()
-                .put("order_id", order.getOrderId())
-                .put("merchant_id", order.getMerchantId())
-                .put("cashier_id", order.getCashierId())
-                .put("total_amount", order.getTotalPrice())
-                .put("status", "created")
-                .put("occurred_at", java.time.Instant.now().toString());
-
-        // Attach standard event envelope (event_id, schema_version, event_type, occurred_at)
-        io.vertx.core.json.JsonObject eventPayload =
-                com.sanedge.common.event.EventEnvelope.withDefaults(payload, "order.created");
-
-        String eventId = eventPayload.getString("event_id");
-
-        Outbox outbox = new Outbox();
-        outbox.setAggregateType("Order");
-        outbox.setAggregateId(String.valueOf(order.getOrderId()));
-        outbox.setTopic("stats.pos.order.event");
-        outbox.setPayload(eventPayload.encode());
-        outbox.setDomain("order");
-        outbox.setEventId(eventId);
-
-        return outboxRepository.persist(outbox).replaceWithVoid();
-    }
-
     private <T> Uni<T> runTraced(String operationName, String method, Attributes attributes,
             java.util.function.Supplier<Uni<T>> supplier) {
         return tracingMetrics.traceAndMeasure(operationName, method, attributes, supplier);
+    }
+
+    /**
+     * Writes the domain events of a created order into the transactional
+     * outbox: one {@code order.created} event to topic {@code order.event} and
+     * one {@code order_item.created} event per order line to topic
+     * {@code order_item.event}.
+     *
+     * <p>The rows are stored in the same database transaction as the order, so
+     * an event exists if and only if the order was really created — even when
+     * the broker is down. The {@code OutboxPublisher} relays them to Kafka
+     * afterwards.
+     */
+    Uni<Void> persistOrderStats(Order order) {
+        if (outboxRepository == null) {
+            return Uni.createFrom().voidItem();
+        }
+
+        Uni<Void> writes = persistOutboxEvent(orderEvent(order));
+        return orderItemQueryPort.findOrderItemByOrder(order.getOrderId().intValue())
+                .chain(items -> {
+                    Uni<Void> chain = writes;
+                    for (var item : items) {
+                        chain = chain.chain(() -> persistOutboxEvent(orderItemEvent(order, item)));
+                    }
+                    return chain;
+                });
+    }
+
+    private Uni<Void> persistOutboxEvent(Outbox outbox) {
+        return outboxRepository.persistEvent(outbox).replaceWithVoid();
+    }
+
+    private Outbox orderEvent(Order order) {
+        String eventId = UUID.randomUUID().toString();
+        JsonObject payload = new JsonObject()
+                .put("order_id", order.getOrderId())
+                .put("merchant_id", order.getMerchantId())
+                .put("cashier_id", order.getCashierId())
+                .put("status", "CREATED")
+                .put("total_amount", order.getTotalPrice() != null ? order.getTotalPrice() : 0L);
+        JsonObject event = new JsonObject()
+                .put("event_id", eventId)
+                .put("event_type", "order.created")
+                .put("occurred_at", Instant.now().toString())
+                .put("payload", payload);
+
+        Outbox outbox = new Outbox();
+        outbox.setAggregateType("ORDER");
+        outbox.setAggregateId(String.valueOf(order.getOrderId()));
+        outbox.setEventKey(String.valueOf(order.getOrderId()));
+        outbox.setDomain(Outbox.DOMAIN_ORDER);
+        outbox.setTopic(EventTopics.ORDER);
+        outbox.setEventId(eventId);
+        outbox.setPayload(event.encode());
+        return outbox;
+    }
+
+    private Outbox orderItemEvent(Order order, com.sanedge.common.adapter.model.OrderItem item) {
+        String eventId = UUID.randomUUID().toString();
+        JsonObject payload = new JsonObject()
+                .put("order_item_id", item.orderItemId())
+                .put("order_id", item.orderId())
+                .put("product_id", item.productId())
+                .put("quantity", item.quantity())
+                .put("unit_price", item.price())
+                .put("subtotal", (long) item.price() * item.quantity());
+        JsonObject event = new JsonObject()
+                .put("event_id", eventId)
+                .put("event_type", "order_item.created")
+                .put("occurred_at", Instant.now().toString())
+                .put("payload", payload);
+
+        Outbox outbox = new Outbox();
+        outbox.setAggregateType("ORDER_ITEM");
+        outbox.setAggregateId(String.valueOf(item.orderItemId()));
+        outbox.setEventKey(String.valueOf(item.orderItemId()));
+        outbox.setDomain(Outbox.DOMAIN_ORDER);
+        outbox.setTopic(EventTopics.ORDER_ITEM);
+        outbox.setEventId(eventId);
+        outbox.setPayload(event.encode());
+        return outbox;
     }
 }

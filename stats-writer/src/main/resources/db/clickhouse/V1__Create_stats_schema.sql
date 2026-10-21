@@ -18,6 +18,22 @@ CREATE TABLE IF NOT EXISTS pos_stats.order_daily
 ORDER BY (toDate(occurred_at), order_id, event_id)
 TTL toDate(occurred_at) + INTERVAL 2 YEAR;
 
+-- Order item daily stats (F3 events → ClickHouse)
+CREATE TABLE IF NOT EXISTS pos_stats.order_item_daily
+(
+    event_id      String,
+    occurred_at   DateTime,
+    order_item_id String,
+    order_id      String,
+    product_id    String,
+    quantity      UInt32,
+    price         Decimal(18,2),
+    subtotal      Decimal(18,2),
+    event_version UInt64
+) ENGINE = ReplacingMergeTree(event_version)
+ORDER BY (toDate(occurred_at), order_item_id, event_id)
+TTL toDate(occurred_at) + INTERVAL 2 YEAR;
+
 -- Transaction daily stats (F3 events → ClickHouse)
 CREATE TABLE IF NOT EXISTS pos_stats.transaction_daily
 (

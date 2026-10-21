@@ -22,9 +22,10 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 
 /**
- * Transactional outbox publisher. Polls PENDING outbox rows on a fixed
- * interval and pushes them to Kafka. A row that fails to publish is left
- * PENDING (attempts incremented) and retried on a later tick until
+ * Transactional outbox publisher for the transaction module. Polls the
+ * PENDING outbox rows of the {@code transaction} domain on a fixed interval
+ * and pushes them to Kafka. A row that fails to publish is left PENDING
+ * (attempts incremented) and retried on a later tick until
  * {@code outbox.publisher.max-attempts} is reached, after which it is marked
  * FAILED (dead letter) and surfaced via the {@code outbox_failed_total} metric.
  */
@@ -32,6 +33,9 @@ import jakarta.inject.Inject;
 public class OutboxPublisher {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
+
+    /** Rows of the shared outbox table that belong to this module. */
+    static final String DOMAIN = Outbox.DOMAIN_TRANSACTION;
 
     @Inject
     Vertx vertx;
@@ -104,7 +108,7 @@ public class OutboxPublisher {
      * direct unit testing of the drain flow.
      */
     Uni<Void> drainPending() {
-        return outboxRepository.findPending(batchSize)
+        return outboxRepository.findDue(DOMAIN, batchSize)
                 .chain(this::processPending);
     }
 
@@ -117,25 +121,41 @@ public class OutboxPublisher {
     }
 
     private Uni<Void> process(Outbox outbox) {
-        // F3: Use sendExistingEvent to preserve the original occurred_at from the payload
-        return kafkaService.sendExistingEvent(outbox.getTopic(), outbox.getAggregateId(), outbox.getPayload())
-                .chain(() -> outboxRepository.markProcessed(outbox.getId()))
-                .onItem().invoke(() -> {
-                    publishedCounter.add(1);
-                    log.debug("📤 Outbox published | id={} topic={} key={}",
-                            outbox.getId(), outbox.getTopic(), outbox.getAggregateId());
-                })
-                .onFailure().recoverWithUni(err -> {
-                    log.warn("⚠️ Outbox publish failed | id={} topic={} error={}",
-                            outbox.getId(), outbox.getTopic(), err.getMessage());
-                    return outboxRepository.markFailed(outbox.getId(), err.getMessage(), maxAttempts)
-                            .invoke(() -> {
-                                if (outbox.getAttempts() + 1 >= maxAttempts) {
-                                    failedCounter.add(1);
-                                    log.error("❌ Outbox moved to FAILED (dead letter) | id={} topic={} attempts={}",
-                                            outbox.getId(), outbox.getTopic(), outbox.getAttempts() + 1);
-                                }
+        // Claim the row first: the lease guarantees that only one publisher
+        // (also across the replicas of this service) relays the same event.
+        return outboxRepository.claim(DOMAIN, outbox)
+                .chain(claimed -> {
+                    if (claimed == null) {
+                        // Another publisher got there first.
+                        return Uni.createFrom().voidItem();
+                    }
+                    // F3: Use sendExistingEvent to preserve the original occurred_at from the payload
+                    return kafkaService.sendExistingEvent(claimed.getTopic(),
+                                    claimed.getEventKey() != null ? claimed.getEventKey() : claimed.getAggregateId(),
+                                    claimed.getPayload())
+                            .chain(() -> outboxRepository.markSent(claimed))
+                            .onItem().invoke(() -> {
+                                publishedCounter.add(1);
+                                log.debug("📤 Outbox published | id={} topic={} key={}",
+                                        claimed.getId(), claimed.getTopic(), claimed.getAggregateId());
+                            })
+                            .onFailure().recoverWithUni(err -> {
+                                log.warn("⚠️ Outbox publish failed | id={} topic={} error={}",
+                                        claimed.getId(), claimed.getTopic(), err.getMessage());
+                                return outboxRepository.markRetry(claimed, err,
+                                        retryDelaySeconds(claimed.getAttempts()), maxAttempts)
+                                        .invoke(() -> {
+                                            if (claimed.getAttempts() + 1 >= maxAttempts) {
+                                                failedCounter.add(1);
+                                                log.error("❌ Outbox moved to FAILED (dead letter) | id={} topic={} attempts={}",
+                                                        claimed.getId(), claimed.getTopic(), claimed.getAttempts() + 1);
+                                            }
+                                        });
                             });
                 });
+    }
+
+    private long retryDelaySeconds(int attempts) {
+        return Math.min(300, 1L << Math.min(8, Math.max(0, attempts - 1)));
     }
 }

@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.sql.Timestamp;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,6 +36,8 @@ import com.sanedge.order.domain.requests.CreateOrderItemRequest;
 import com.sanedge.order.domain.response.OrderResponse;
 import com.sanedge.order.domain.response.OrderResponseDeleteAt;
 import com.sanedge.order.entity.Order;
+import com.sanedge.order.entity.Outbox;
+import com.sanedge.order.entity.OutboxStatus;
 import com.sanedge.order.repository.OrderCommandRepository;
 import com.sanedge.order.repository.OrderQueryRepository;
 import com.sanedge.order.repository.OutboxRepository;
@@ -47,6 +52,7 @@ import com.sanedge.common.adapter.model.Merchant;
 import com.sanedge.common.adapter.model.Product;
 import com.sanedge.common.adapter.model.OrderItem;
 import com.sanedge.common.adapter.order_item.OrderItemCommandPort;
+import com.sanedge.common.adapter.order_item.OrderItemQueryPort;
 import com.sanedge.common.adapter.product.ProductCommandPort;
 import com.sanedge.common.adapter.product.ProductQueryPort;
 
@@ -57,8 +63,6 @@ class OrderCommandServiceImplTest {
     private OrderQueryRepository orderQueryRepo;
     @Mock
     private OrderCommandRepository orderCommandRepo;
-    @Mock
-    private OutboxRepository outboxRepository;
     @Mock
     private Validator validator;
     @Mock
@@ -76,14 +80,18 @@ class OrderCommandServiceImplTest {
     private ProductCommandPort productCommandPort;
     @Mock
     private OrderItemCommandPort orderItemCommandPort;
+    @Mock
+    private OrderItemQueryPort orderItemQueryPort;
+    @Mock
+    private OutboxRepository outboxRepository;
 
     private OrderCommandServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new OrderCommandServiceImpl(orderQueryRepo, orderCommandRepo, outboxRepository, validator, redisService,
+        service = new OrderCommandServiceImpl(orderQueryRepo, orderCommandRepo, validator, redisService,
                 tracingMetrics, merchantQueryPort, cashierQueryPort, productQueryPort, productCommandPort,
-                orderItemCommandPort);
+                orderItemCommandPort, orderItemQueryPort, outboxRepository);
 
         // Lenient stubs for traceAndMeasure
         lenient().doAnswer(invocation -> {
@@ -110,6 +118,12 @@ class OrderCommandServiceImplTest {
                 .thenReturn(Uni.createFrom().item(new OrderItem(1, 1, 1, 2, 5000, null, null)));
         lenient().when(orderItemCommandPort.updateOrderItem(any()))
                 .thenReturn(Uni.createFrom().item(new OrderItem(1, 1, 1, 2, 5000, null, null)));
+        lenient().when(orderItemQueryPort.findOrderItemByOrder(anyInt()))
+                .thenReturn(Uni.createFrom().item(List.of(new OrderItem(1, 1, 1, 2, 5000, null, null))));
+
+        // Transactional outbox used by the stats pipeline
+        lenient().when(outboxRepository.persistEvent(any(Outbox.class)))
+                .thenAnswer(inv -> Uni.createFrom().item((Outbox) inv.getArgument(0)));
     }
 
     private Order createMockOrder(Long id) {
@@ -148,6 +162,39 @@ class OrderCommandServiceImplTest {
             assertThat(resp.status()).isEqualTo("success");
             assertThat(resp.data().getId()).isEqualTo(1);
             assertThat(resp.data().getTotalPrice()).isEqualTo(10000L); // 2 * 5000
+        }
+
+        @Test
+        void writesOrderAndOrderItemEventsIntoTheOutbox() {
+            CreateOrderRequest req = new CreateOrderRequest();
+            req.setMerchantId(10);
+            req.setCashierId(100);
+            CreateOrderItemRequest item = new CreateOrderItemRequest();
+            item.setProductId(1);
+            item.setQuantity(2);
+            item.setPrice(5000);
+            req.setItems(List.of(item));
+
+            when(orderCommandRepo.persist(any(Order.class))).thenAnswer(inv -> {
+                Order o = inv.getArgument(0);
+                o.setOrderId(1L);
+                return Uni.createFrom().item(o);
+            });
+
+            service.create(req).await().indefinitely();
+
+            ArgumentCaptor<Outbox> captor = ArgumentCaptor.forClass(Outbox.class);
+            verify(outboxRepository, times(2)).persistEvent(captor.capture());
+
+            List<Outbox> rows = captor.getAllValues();
+            assertThat(rows).extracting(Outbox::getTopic)
+                    .containsExactlyInAnyOrder("order.event", "order_item.event");
+            assertThat(rows).allSatisfy(row -> {
+                assertThat(row.getDomain()).isEqualTo("order");
+                assertThat(row.getEventId()).isNotBlank();
+                assertThat(row.getStatus()).isEqualTo(OutboxStatus.PENDING);
+                assertThat(row.getPayload()).contains("event_id");
+            });
         }
 
         @Test

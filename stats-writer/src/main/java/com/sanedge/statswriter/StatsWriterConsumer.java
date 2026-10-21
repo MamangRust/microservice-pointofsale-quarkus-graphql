@@ -2,6 +2,7 @@ package com.sanedge.statswriter;
 
 import com.sanedge.common.clickhouse.ClickHouseClient;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonObject;
 import io.vertx.kafka.client.consumer.KafkaConsumer;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -23,7 +24,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Kafka consumer for stats.pos.* topics using Vert.x Kafka client
+ * Kafka consumer for the stats topics (transactions.event, order.event,
+ * order_item.event) using Vert.x Kafka client
  * (matching the existing project pattern in order/transaction modules).
  * Receives domain events and batches them for efficient ClickHouse insertion.
  * Flushes every 1000 rows or every 5 seconds.
@@ -49,6 +51,7 @@ public class StatsWriterConsumer {
 
     private final ConcurrentLinkedQueue<Map<String, Object>> orderBatch = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<Map<String, Object>> transactionBatch = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<Map<String, Object>> orderItemBatch = new ConcurrentLinkedQueue<>();
     private final AtomicLong eventsConsumed = new AtomicLong(0);
     private final AtomicLong flushErrors = new AtomicLong(0);
 
@@ -69,7 +72,10 @@ public class StatsWriterConsumer {
         consumer = KafkaConsumer.create(vertx, config);
 
         // Subscribe to topics
-        java.util.Set<String> topics = java.util.Set.of("stats.pos.order.event", "stats.pos.transaction.event");
+        java.util.Set<String> topics = java.util.Set.of(
+                com.sanedge.common.event.EventTopics.ORDER,
+                com.sanedge.common.event.EventTopics.ORDER_ITEM,
+                com.sanedge.common.event.EventTopics.TRANSACTIONS);
         consumer.subscribe(topics)
                 .onSuccess(v -> log.info("✅ Subscribed to topics: {}", topics))
                 .onFailure(e -> log.error("❌ Failed to subscribe: {}", e.getMessage(), e));
@@ -116,7 +122,7 @@ public class StatsWriterConsumer {
     private void processRecord(String topic, String message) {
         io.vertx.core.json.JsonObject json = new io.vertx.core.json.JsonObject(message);
 
-        if ("stats.pos.order.event".equals(topic)) {
+        if (com.sanedge.common.event.EventTopics.ORDER.equals(topic)) {
             Map<String, Object> row = extractOrderRow(json);
             if (row != null) {
                 orderBatch.add(row);
@@ -125,7 +131,16 @@ public class StatsWriterConsumer {
                     flushOrderBatch();
                 }
             }
-        } else if ("stats.pos.transaction.event".equals(topic)) {
+        } else if (com.sanedge.common.event.EventTopics.ORDER_ITEM.equals(topic)) {
+            Map<String, Object> row = extractOrderItemRow(json);
+            if (row != null) {
+                orderItemBatch.add(row);
+                eventsConsumed.incrementAndGet();
+                if (orderItemBatch.size() >= BATCH_SIZE) {
+                    flushOrderItemBatch();
+                }
+            }
+        } else if (com.sanedge.common.event.EventTopics.TRANSACTIONS.equals(topic)) {
             Map<String, Object> row = extractTransactionRow(json);
             if (row != null) {
                 transactionBatch.add(row);
@@ -138,35 +153,86 @@ public class StatsWriterConsumer {
     }
 
     private Map<String, Object> extractOrderRow(io.vertx.core.json.JsonObject json) {
+        JsonObject body = body(json);
         Map<String, Object> row = new HashMap<>();
         row.put("event_id", json.getString("event_id"));
         row.put("occurred_at", ClickHouseClient.normalizeDateTime(json.getString("occurred_at")));
-        row.put("order_id", String.valueOf(json.getLong("order_id")));
-        row.put("merchant_id", String.valueOf(json.getLong("merchant_id")));
-        row.put("cashier_id", json.getLong("cashier_id") != null ? String.valueOf(json.getLong("cashier_id")) : null);
-        row.put("status", json.getString("status", "created"));
-        row.put("total_amount", json.getLong("total_amount", 0L));
+        row.put("order_id", asString(body, "order_id"));
+        row.put("merchant_id", asString(body, "merchant_id"));
+        row.put("cashier_id", asString(body, "cashier_id"));
+        row.put("status", asStatus(body.getString("status"), "created"));
+        row.put("total_amount", asLong(body, "total_amount", 0L));
         row.put("event_version", System.currentTimeMillis());
         return row;
     }
 
     private Map<String, Object> extractTransactionRow(io.vertx.core.json.JsonObject json) {
+        JsonObject body = body(json);
         Map<String, Object> row = new HashMap<>();
         row.put("event_id", json.getString("event_id"));
         row.put("occurred_at", ClickHouseClient.normalizeDateTime(json.getString("occurred_at")));
-        row.put("transaction_id", String.valueOf(json.getLong("transaction_id")));
-        row.put("order_id", String.valueOf(json.getLong("order_id")));
-        row.put("merchant_id", String.valueOf(json.getLong("merchant_id")));
-        row.put("cashier_id", json.getLong("cashier_id") != null ? String.valueOf(json.getLong("cashier_id")) : null);
-        row.put("payment_method", json.getString("payment_method"));
-        row.put("status", json.getString("status"));
-        row.put("amount", json.getLong("amount", 0L));
+        row.put("transaction_id", asString(body, "transaction_id"));
+        row.put("order_id", asString(body, "order_id"));
+        row.put("merchant_id", asString(body, "merchant_id"));
+        row.put("cashier_id", asString(body, "cashier_id"));
+        row.put("payment_method", body.getString("payment_method"));
+        row.put("status", asStatus(body.getString("status"), "unknown"));
+        row.put("amount", asLong(body, "amount", 0L));
         row.put("event_version", System.currentTimeMillis());
         return row;
     }
 
+    private Map<String, Object> extractOrderItemRow(io.vertx.core.json.JsonObject json) {
+        JsonObject body = body(json);
+        Map<String, Object> row = new HashMap<>();
+        row.put("event_id", json.getString("event_id"));
+        row.put("occurred_at", ClickHouseClient.normalizeDateTime(json.getString("occurred_at")));
+        row.put("order_item_id", asString(body, "order_item_id"));
+        row.put("order_id", asString(body, "order_id"));
+        row.put("product_id", asString(body, "product_id"));
+        row.put("quantity", asInt(body, "quantity", 0));
+        // The order_item event carries the unit price as "unit_price".
+        row.put("price", asLong(body, "price", asLong(body, "unit_price", 0L)));
+        row.put("subtotal", asLong(body, "subtotal", 0L));
+        row.put("event_version", System.currentTimeMillis());
+        return row;
+    }
+
+    /**
+     * Returns the event body: the nested {@code payload} object when the event
+     * is published directly (order.created / order_item.created /
+     * transaction.created), otherwise the flat envelope itself (outbox events).
+     */
+    private static JsonObject body(JsonObject json) {
+        JsonObject payload = json.getJsonObject("payload");
+        return payload != null ? payload : json;
+    }
+
+    private static String asString(JsonObject json, String key) {
+        Object value = json.getValue(key);
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static Long asLong(JsonObject json, String key, Long defaultValue) {
+        Object value = json.getValue(key);
+        return value instanceof Number ? ((Number) value).longValue() : defaultValue;
+    }
+
+    private static Integer asInt(JsonObject json, String key, int defaultValue) {
+        Object value = json.getValue(key);
+        return value instanceof Number ? ((Number) value).intValue() : defaultValue;
+    }
+
+    /** Normalizes the status so the same state is not split by casing. */
+    private static String asStatus(String status, String defaultValue) {
+        return status == null || status.isBlank()
+                ? defaultValue
+                : status.toLowerCase();
+    }
+
     private void flushAll() {
         flushOrderBatch();
+        flushOrderItemBatch();
         flushTransactionBatch();
     }
 
@@ -183,6 +249,24 @@ public class StatsWriterConsumer {
                         log.error("❌ Failed to flush order batch: {}", ex.getMessage(), ex);
                         flushErrors.incrementAndGet();
                         batch.forEach(orderBatch::add);
+                        return null;
+                    });
+        }
+    }
+
+    private void flushOrderItemBatch() {
+        List<Map<String, Object>> batch = new ArrayList<>();
+        while (!orderItemBatch.isEmpty() && batch.size() < BATCH_SIZE) {
+            Map<String, Object> row = orderItemBatch.poll();
+            if (row != null) batch.add(row);
+        }
+        if (!batch.isEmpty()) {
+            clickHouseClient.insert("pos.order_item_daily", batch)
+                    .thenRun(() -> log.debug("✅ Flushed {} order item rows to ClickHouse", batch.size()))
+                    .exceptionally(ex -> {
+                        log.error("❌ Failed to flush order item batch: {}", ex.getMessage(), ex);
+                        flushErrors.incrementAndGet();
+                        batch.forEach(orderItemBatch::add);
                         return null;
                     });
         }
@@ -210,4 +294,5 @@ public class StatsWriterConsumer {
     public long getFlushErrors() { return flushErrors.get(); }
     public int getOrderBatchSize() { return orderBatch.size(); }
     public int getTransactionBatchSize() { return transactionBatch.size(); }
+    public int getOrderItemBatchSize() { return orderItemBatch.size(); }
 }

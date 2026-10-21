@@ -26,6 +26,7 @@ import com.sanedge.common.config.RedisService;
 import com.sanedge.common.domain.response.ApiResponse;
 import com.sanedge.common.domain.response.ApiResponsePagination;
 import com.sanedge.common.domain.response.PagedResult;
+import com.sanedge.common.domain.response.PaginationMeta;
 import com.sanedge.common.observability.TracingMetrics;
 import com.sanedge.order_item.domain.requests.FindAllOrderItems;
 import com.sanedge.order_item.domain.response.OrderItemResponse;
@@ -99,14 +100,13 @@ class OrderItemQueryServiceImplTest {
             assertThat(result.status()).isEqualTo("success");
             assertThat(result.data()).hasSize(1);
             assertThat(result.data().get(0).getProductId()).isEqualTo(10L);
-            assertThat(result.pagination()).isNotNull();
             assertThat(result.pagination().totalRecords()).isEqualTo(1);
         }
         @Test void cacheHit_returnsCached() {
             FindAllOrderItems req = findAllReq(1, 10, "");
-            // Pre-construct JSON to avoid Jackson record+generics deserialization issues in unit tests
-            String cachedJson = "{\"status\":\"success\",\"message\":\"Success\",\"data\":[{\"id\":1,\"orderId\":100,\"productId\":10,\"quantity\":2,\"price\":5000}],\"pagination\":{\"currentPage\":1,\"pageSize\":10,\"totalPages\":1,\"totalRecords\":1}}";
-            when(redisService.getReactive(anyString())).thenReturn(Uni.createFrom().item(cachedJson));
+            ApiResponsePagination<List<OrderItemResponse>> cached = new ApiResponsePagination<>("success", "Success",
+                    List.of(OrderItemResponse.from(createMockOrderItem(1L))), new PaginationMeta(1, 10, 1, 1));
+            when(redisService.getReactive(anyString())).thenReturn(Uni.createFrom().item(toJson(cached)));
 
             ApiResponsePagination<List<OrderItemResponse>> result = service.findAll(req).await().indefinitely();
             assertThat(result.status()).isEqualTo("success");
@@ -123,8 +123,7 @@ class OrderItemQueryServiceImplTest {
                     .thenReturn(Uni.createFrom().item(new PagedResult<>(List.of(createMockOrderItem(1L)), 1)));
             when(redisService.setWithExpirationReactive(anyString(), anyString(), anyLong())).thenReturn(Uni.createFrom().voidItem());
 
-            ApiResponsePagination<List<OrderItemResponseDeleteAt>> result = service.findByActive(req).await()
-                    .indefinitely();
+            ApiResponsePagination<List<OrderItemResponseDeleteAt>> result = service.findByActive(req).await().indefinitely();
             assertThat(result.status()).isEqualTo("success");
         }
     }
@@ -139,8 +138,7 @@ class OrderItemQueryServiceImplTest {
                     .thenReturn(Uni.createFrom().item(new PagedResult<>(List.of(createMockOrderItem(1L)), 1)));
             when(redisService.setWithExpirationReactive(anyString(), anyString(), anyLong())).thenReturn(Uni.createFrom().voidItem());
 
-            ApiResponsePagination<List<OrderItemResponseDeleteAt>> result = service.findByTrashed(req).await()
-                    .indefinitely();
+            ApiResponsePagination<List<OrderItemResponseDeleteAt>> result = service.findByTrashed(req).await().indefinitely();
             assertThat(result.status()).isEqualTo("success");
         }
     }

@@ -12,10 +12,7 @@ import io.smallrye.mutiny.Uni;
 
 public interface OrderItemQueryService {
     Uni<ApiResponsePagination<List<OrderItemResponse>>> findAll(FindAllOrderItems request);
-
     Uni<ApiResponsePagination<List<OrderItemResponseDeleteAt>>> findByActive(FindAllOrderItems request);
-
     Uni<ApiResponsePagination<List<OrderItemResponseDeleteAt>>> findByTrashed(FindAllOrderItems request);
-
     Uni<ApiResponse<List<OrderItemResponse>>> findOrderItemByOrder(Integer orderId);
 }

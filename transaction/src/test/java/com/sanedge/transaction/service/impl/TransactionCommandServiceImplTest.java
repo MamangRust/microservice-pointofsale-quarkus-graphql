@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,6 +40,7 @@ import com.sanedge.transaction.entity.Transaction;
 import com.sanedge.transaction.repository.OutboxRepository;
 import com.sanedge.transaction.repository.TransactionCommandRepository;
 import com.sanedge.transaction.repository.TransactionQueryRepository;
+import com.sanedge.transaction.service.KafkaService;
 
 import io.opentelemetry.api.common.Attributes;
 import io.smallrye.mutiny.Uni;
@@ -61,14 +63,18 @@ class TransactionCommandServiceImplTest {
     @Mock private MerchantQueryPort merchantQueryPort;
     @Mock private OrderQueryPort orderQueryPort;
     @Mock private OrderItemQueryPort orderItemQueryPort;
+    @Mock private KafkaService kafkaService;
 
     private TransactionCommandServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new TransactionCommandServiceImpl(transactionQueryRepo, transactionCommandRepo, outboxRepository, redisService, tracingMetrics, merchantQueryPort, orderQueryPort, orderItemQueryPort);
+        service = new TransactionCommandServiceImpl(transactionQueryRepo, transactionCommandRepo, outboxRepository, redisService, tracingMetrics, merchantQueryPort, orderQueryPort, orderItemQueryPort, kafkaService);
         service.notificationEmail = "admin@example.com";
-        lenient().when(outboxRepository.persist(any(Outbox.class))).thenReturn(Uni.createFrom().nullItem());
+        lenient().when(outboxRepository.persistEvent(any(Outbox.class)))
+                .thenAnswer(inv -> Uni.createFrom().item((Outbox) inv.getArgument(0)));
+        lenient().when(kafkaService.sendExistingEvent(anyString(), anyString(), anyString()))
+                .thenReturn(Uni.createFrom().voidItem());
 
         // Lenient stub for traceAndMeasure
         lenient().doAnswer(invocation -> {
@@ -161,19 +167,28 @@ class TransactionCommandServiceImplTest {
             assertThat(resp.status()).isEqualTo("success");
 
             ArgumentCaptor<Outbox> outboxCaptor = ArgumentCaptor.forClass(Outbox.class);
-            verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).persist(outboxCaptor.capture());
+            verify(outboxRepository, org.mockito.Mockito.atLeastOnce()).persistEvent(outboxCaptor.capture());
             List<Outbox> captured = outboxCaptor.getAllValues();
-            assertThat(captured).hasSizeGreaterThanOrEqualTo(2);
-            // First persist: email notification event
+            // Both the email notification event and the stats event
+            // (transactions.event) are written to the outbox, in the same
+            // transaction as the transaction row itself.
+            assertThat(captured).hasSize(2);
+
             Outbox emailOutbox = captured.get(0);
             assertThat(emailOutbox.getTopic()).isEqualTo("email-service-topic-transaction-create");
             assertThat(emailOutbox.getAggregateType()).isEqualTo("TRANSACTION");
             assertThat(emailOutbox.getAggregateId()).isEqualTo("1");
+            assertThat(emailOutbox.getDomain()).isEqualTo("transaction");
             assertThat(emailOutbox.getPayload()).contains("\"email\"");
-            // Second persist: stats pipeline event
+
             Outbox statsOutbox = captured.get(1);
-            assertThat(statsOutbox.getTopic()).isEqualTo("stats.pos.transaction.event");
+            assertThat(statsOutbox.getTopic()).isEqualTo("transactions.event");
             assertThat(statsOutbox.getDomain()).isEqualTo("transaction");
+            assertThat(statsOutbox.getEventId()).isNotBlank();
+            assertThat(statsOutbox.getPayload()).contains("event_id");
+
+            // Nothing is published directly to Kafka anymore.
+            verify(kafkaService, never()).sendExistingEvent(anyString(), anyString(), anyString());
         }
 
         @Test void replayWithSameIdempotencyKey_returnsExistingWithoutInsert() {
@@ -189,7 +204,7 @@ class TransactionCommandServiceImplTest {
             assertThat(resp.message()).contains("idempotent replay");
             assertThat(resp.data().getId()).isEqualTo(7);
             verify(transactionCommandRepo, never()).persist(any(Transaction.class));
-            verify(outboxRepository, never()).persist(any(Outbox.class));
+            verify(outboxRepository, never()).persistEvent(any(Outbox.class));
             verify(merchantQueryPort, never()).findByMerchantId(anyInt());
         }
 
@@ -217,7 +232,7 @@ class TransactionCommandServiceImplTest {
 
             ApiResponse<TransactionResponse> resp = service.create(req).await().indefinitely();
             assertThat(resp.status()).isEqualTo("error");
-            verify(outboxRepository, never()).persist(any(Outbox.class));
+            verify(outboxRepository, never()).persistEvent(any(Outbox.class));
         }
     }
 
